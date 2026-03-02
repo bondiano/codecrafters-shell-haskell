@@ -46,7 +46,9 @@ repl = do
     hFlush stdout
 
     input <- getLine
-    if null input then repl else execute (parseCommand input)
+    unless (null input) $ execute (parseCommand input)
+    repl
+
 
 main :: IO ()
 main = repl
