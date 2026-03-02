@@ -24,6 +24,7 @@ toExitCode code = ExitFailure code
 execute :: Commands -> IO ()
 execute (Echo str)          = putStrLn str
 execute (External cmd _args) = putStrLn (cmd ++ ": command not found")
+execute (Exit code)         = exitWith (toExitCode code)
 
 executeCommand :: Commands -> IO Bool
 executeCommand (Exit code) = exitWith (toExitCode code) >> return False
