@@ -8,5 +8,5 @@ main = do
     hFlush stdout
 
     command <- getLine
-    putStrLn $ command <> ": command not found"
-    pure ()
+    putStrLn $ command ++ ": command not found"
+    main
