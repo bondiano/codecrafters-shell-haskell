@@ -2,13 +2,14 @@ module Main (main) where
 
 import System.IO (hFlush, stdout)
 import System.Exit (ExitCode (ExitSuccess, ExitFailure), exitWith)
-import qualified Control.Monad
+import Control.Monad (when)
 
-data Commands = Exit Int | External String [String]
+data Commands = Exit Int | Echo String | External String [String]
 
 parseCommand :: String -> Commands
 parseCommand input = case words input of
     ("exit" : atgs) -> Exit $ parseExitCode atgs
+    ("echo" : args) -> Echo $ unwords args
     (cmd : args)    -> External cmd args
     []               -> External "" []
 
@@ -20,9 +21,13 @@ toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
 toExitCode code = ExitFailure code
 
+execute :: Commands -> IO ()
+execute (Echo str)          = putStrLn str
+execute (External cmd _args) = putStrLn (cmd ++ ": command not found")
+
 executeCommand :: Commands -> IO Bool
 executeCommand (Exit code) = exitWith (toExitCode code) >> return False
-executeCommand (External cmd _args) = putStrLn (cmd ++ ": command not found") >> return True
+executeCommand cmd = execute cmd >> return True
 
 repl :: IO ()
 repl = do
@@ -31,7 +36,7 @@ repl = do
 
     input <- getLine
     continue <- executeCommand $ parseCommand input
-    Control.Monad.when continue repl
+    when continue repl
 
 main :: IO ()
 main = repl
