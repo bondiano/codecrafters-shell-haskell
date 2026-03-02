@@ -22,7 +22,7 @@ toExitCode code = ExitFailure code
 
 executeCommand :: Commands -> IO Bool
 executeCommand (Exit code) = exitWith (toExitCode code) >> return False
-executeCommand (External cmd args) = putStrLn (cmd ++ " " ++ unwords args) >> return True
+executeCommand (External cmd _args) = putStrLn (cmd ++ ": command not found") >> return True
 
 repl :: IO ()
 repl = do
