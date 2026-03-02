@@ -4,7 +4,9 @@ import System.IO (hFlush, stdout)
 
 main :: IO ()
 main = do
-    -- TODO: Uncomment the code below to pass the first stage
     putStr "$ "
     hFlush stdout
+
+    command <- getLine
+    putStrLn $ command <> ": command not found"
     pure ()
