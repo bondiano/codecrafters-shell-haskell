@@ -1,24 +1,45 @@
 module Main (main) where
 
 import Control.Monad (unless)
+import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
+import System.Directory (doesFileExist)
+import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
+import System.FilePath (splitSearchPath, (</>))
 import System.IO (hFlush, stdout)
 import Text.Read (readMaybe)
 
-data Command = Exit Int | Echo String | Type Command | External String [String]
+data Builtin = Exit Int | Echo String | Type String
 
-commandName :: Command -> String
-commandName (Exit _) = "exit"
-commandName (Echo _) = "echo"
-commandName (Type _) = "type"
-commandName (External cmd _) = cmd
+data Command = BuiltinCmd Builtin | External String [String]
+
+newtype Env = Env {envPaths :: [FilePath]}
+
+buildEnvPath :: IO [FilePath]
+buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
+
+buildEnv :: IO Env
+buildEnv = do
+    paths <- buildEnvPath
+
+    return
+        Env
+            { envPaths = paths
+            }
+
+type Shell = ReaderT Env IO
+
+builtinName :: Builtin -> String
+builtinName (Exit _) = "exit"
+builtinName (Echo _) = "echo"
+builtinName (Type _) = "type"
 
 parseCommand :: String -> Command
 parseCommand input = case words input of
-    ("exit" : args) -> Exit $ parseExitCode args
-    ("echo" : args) -> Echo $ unwords args
-    ("type" : args) -> Type $ parseCommand $ unwords args
+    ("exit" : args) -> BuiltinCmd $ Exit $ parseExitCode args
+    ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
+    ("type" : args) -> BuiltinCmd $ Type $ unwords args
     (cmd : args) -> External cmd args
     [] -> External "" []
 
@@ -30,25 +51,47 @@ toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
 toExitCode code = ExitFailure code
 
-typeOfCommand :: Command -> String
-typeOfCommand (External cmd _) = cmd ++ ": not found"
-typeOfCommand cmd = commandName cmd ++ " is a shell builtin"
+getExecutablePathFromPaths :: [FilePath] -> String -> IO (Maybe String)
+getExecutablePathFromPaths [] _ = pure Nothing
+getExecutablePathFromPaths (dir : dirs) cmd = do
+    let fullPath = dir </> cmd
+    exists <- doesFileExist fullPath
+    if exists then pure $ Just fullPath else getExecutablePathFromPaths dirs cmd
 
-execute :: Command -> IO ()
-execute (Echo str) = putStrLn str
-execute (External cmd _args) = putStrLn (cmd ++ ": command not found")
-execute (Type arg) = putStrLn $ typeOfCommand arg
-execute (Exit code) = exitWith $ toExitCode code
+typeOfCommand :: Command -> Shell String
+typeOfCommand (BuiltinCmd b) = pure $ builtinName b ++ " is a shell builtin"
+typeOfCommand (External cmd _) = do
+    env <- ask
+    mbPaths <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
 
-repl :: IO ()
+    return $ case mbPaths of
+        Just path -> cmd ++ " is " ++ path
+        Nothing -> cmd ++ ": not found"
+
+execute :: Command -> Shell ()
+execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
+execute cmd = do
+    result <- eval cmd
+    liftIO $ putStrLn result
+
+eval :: Command -> Shell String
+eval (BuiltinCmd (Echo str)) = pure str
+eval (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name)
+eval (BuiltinCmd (Exit _)) = pure "" -- unreachable
+eval (External cmd _args) = pure $ cmd ++ ": command not found"
+
+repl :: Shell ()
 repl = do
-    putStr "$ "
-    hFlush stdout
+    liftIO $ do
+        putStr "$ "
+        hFlush stdout
 
-    input <- getLine
+    input <- liftIO getLine
     unless (null input) $ execute (parseCommand input)
+
     repl
 
-
 main :: IO ()
-main = repl
+main = do
+    env <- buildEnv
+    runReaderT repl env

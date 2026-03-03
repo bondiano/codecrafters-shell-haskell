@@ -12,6 +12,7 @@ license: BSD3
 
 dependencies:
   - base >= 4.19 && < 5
+  - mtl
   - process
   - directory
   - filepath
