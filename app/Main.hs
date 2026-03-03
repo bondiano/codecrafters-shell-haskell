@@ -9,9 +9,8 @@ import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
 import System.IO (hFlush, isEOF, stdout)
-import System.Process (createProcess, proc, waitForProcess)
+import System.Process (callProcess)
 import Text.Read (readMaybe)
-import Data.Functor (void)
 
 data Builtin = Exit Int | Echo String | Type String
 
@@ -79,9 +78,7 @@ execute (External cmd args) = do
     mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
 
     case mbPath of
-        Just _ -> liftIO $ do
-            (_, _, _, ph) <- createProcess (proc cmd args)
-            void $ waitForProcess ph
+        Just path -> liftIO $ callProcess path args
         Nothing -> liftIO $ putStrLn $ cmd ++ ": command not found"
 
 repl :: Shell ()
