@@ -3,7 +3,7 @@ module Main (main) where
 import Control.Monad (unless)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, getPermissions, executable)
 import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
@@ -51,12 +51,17 @@ toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
 toExitCode code = ExitFailure code
 
+isExecutable :: FilePath -> IO Bool
+isExecutable path = do
+    exists <- doesFileExist path
+    if exists then executable <$> getPermissions path else pure False
+
 getExecutablePathFromPaths :: [FilePath] -> String -> IO (Maybe String)
 getExecutablePathFromPaths [] _ = pure Nothing
 getExecutablePathFromPaths (dir : dirs) cmd = do
     let fullPath = dir </> cmd
-    exists <- doesFileExist fullPath
-    if exists then pure $ Just fullPath else getExecutablePathFromPaths dirs cmd
+    exists <- isExecutable fullPath
+    if exists then return (Just fullPath) else getExecutablePathFromPaths dirs cmd
 
 typeOfCommand :: Command -> Shell String
 typeOfCommand (BuiltinCmd b) = pure $ builtinName b ++ " is a shell builtin"
