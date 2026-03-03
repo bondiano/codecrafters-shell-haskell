@@ -1,5 +1,7 @@
 module Main (main) where
 
+import Control.Exception (IOException)
+import Control.Exception.Base (try)
 import Control.Monad (unless)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
@@ -74,12 +76,11 @@ execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type "")) = pure ()
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
 execute (External cmd args) = do
-    env <- ask
-    mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
+    result <- liftIO (try (callProcess cmd args) :: IO (Either IOException ()))
 
-    case mbPath of
-        Just path -> liftIO $ callProcess path args
-        Nothing -> liftIO $ putStrLn $ cmd ++ ": command not found"
+    case result of
+        Left _ -> liftIO $ putStrLn $ cmd ++ ": command not found"
+        Right () -> pure ()
 
 repl :: Shell ()
 repl = do
