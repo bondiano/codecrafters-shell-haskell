@@ -11,6 +11,7 @@ import System.FilePath (splitSearchPath, (</>))
 import System.IO (hFlush, isEOF, stdout)
 import System.Process (createProcess, proc, waitForProcess)
 import Text.Read (readMaybe)
+import Data.Functor (void)
 
 data Builtin = Exit Int | Echo String | Type String
 
@@ -77,14 +78,11 @@ execute (External cmd args) = do
     env <- ask
     mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
 
-    liftIO $ case mbPath of
-        Just path -> do
+    case mbPath of
+        Just _ -> liftIO $ do
             (_, _, _, ph) <- createProcess (proc cmd args)
-            processExitCode <- waitForProcess ph
-            case processExitCode of
-                ExitSuccess -> pure ()
-                ExitFailure _ -> exitWith processExitCode
-        Nothing -> putStrLn $ cmd ++ ": command not found"
+            void $ waitForProcess ph
+        Nothing -> liftIO $ putStrLn $ cmd ++ ": command not found"
 
 repl :: Shell ()
 repl = do
