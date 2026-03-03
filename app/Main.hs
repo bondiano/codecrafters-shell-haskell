@@ -1,8 +1,7 @@
 module Main (main) where
 
-import Control.Exception (IOException)
-import Control.Exception.Base (try)
-import Control.Monad (unless)
+import Control.Exception (IOException, try)
+import Control.Monad (unless, void)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
@@ -11,7 +10,8 @@ import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
 import System.IO (hFlush, isEOF, stdout)
-import System.Process (callProcess)
+import System.IO.Error (isDoesNotExistError, isPermissionError)
+import System.Process (createProcess, proc, waitForProcess)
 import Text.Read (readMaybe)
 
 data Builtin = Exit Int | Echo String | Type String
@@ -76,10 +76,15 @@ execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type "")) = pure ()
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
 execute (External cmd args) = do
-    result <- liftIO (try (callProcess cmd args) :: IO (Either IOException ()))
+    result <- liftIO $ try $ do
+        (_, _, _, ph) <- createProcess (proc cmd args)
+        void $ waitForProcess ph
 
-    case result of
-        Left _ -> liftIO $ putStrLn $ cmd ++ ": command not found"
+    liftIO $ case (result :: Either IOException ()) of
+        Left e
+            | isDoesNotExistError e -> putStrLn $ cmd ++ ": command not found"
+            | isPermissionError e -> putStrLn $ cmd ++ ": permission denied"
+            | otherwise -> putStrLn $ cmd ++ ": " ++ show e
         Right () -> pure ()
 
 repl :: Shell ()
