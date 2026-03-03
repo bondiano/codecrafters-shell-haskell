@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Control.Monad (unless)
+import Control.Monad.ListM (findM)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
 import System.Directory (doesFileExist, executable, getPermissions)
@@ -8,8 +9,8 @@ import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
 import System.IO (hFlush, isEOF, stdout)
+import System.Process (callProcess, createProcess, proc, waitForProcess)
 import Text.Read (readMaybe)
-import Control.Monad.ListM (findM)
 
 data Builtin = Exit Int | Echo String | Type String
 
@@ -60,19 +61,30 @@ typeOfCommand Empty = pure ""
 typeOfCommand (BuiltinCmd b) = pure $ builtinName b ++ " is a shell builtin"
 typeOfCommand (External cmd _) = do
     env <- ask
-    mbPaths <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
+    mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
 
-    return $ case mbPaths of
+    return $ case mbPath of
         Just path -> cmd ++ " is " ++ path
         Nothing -> cmd ++ ": not found"
 
 execute :: Command -> Shell ()
+execute Empty = pure ()
 execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
-execute (BuiltinCmd (Echo str)) = liftIO $ putStrLn str
+execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type "")) = pure ()
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
-execute (External cmd _args) = liftIO $ putStrLn $ cmd ++ ": command not found"
-execute Empty = pure ()
+execute (External cmd args) = do
+    env <- ask
+    mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
+
+    liftIO $ case mbPath of
+        Just path -> do
+            (_, _, _, ph) <- createProcess (proc path args)
+            processExitCode <- waitForProcess ph
+            case processExitCode of
+                ExitSuccess -> pure ()
+                ExitFailure code -> exitWith (toExitCode code)
+        Nothing -> putStrLn $ cmd ++ ": command not found"
 
 repl :: Shell ()
 repl = do
