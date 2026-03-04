@@ -5,7 +5,7 @@ import Control.Monad (unless, void)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
-import System.Directory (doesFileExist, executable, getPermissions)
+import System.Directory (doesFileExist, executable, getPermissions, getCurrentDirectory)
 import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
@@ -13,7 +13,6 @@ import System.IO (hFlush, isEOF, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
 import System.Process (createProcess, proc, waitForProcess)
 import Text.Read (readMaybe)
-import System.Directory.OsPath (getCurrentDirectory)
 
 data Builtin = Exit Int | Echo String | Type String | PWD
 
@@ -40,6 +39,7 @@ parseCommand input = case words input of
     ("exit" : args) -> BuiltinCmd $ Exit $ parseExitCode args
     ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
     ("type" : args) -> BuiltinCmd $ Type $ unwords args
+    ("pwd" : _) -> BuiltinCmd PWD
     (cmd : args) -> External cmd args
     [] -> Empty
 
@@ -73,7 +73,7 @@ execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type "")) = pure ()
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
-execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= print
+execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= putStrLn
 execute (External cmd args) = do
     result <- liftIO $ try $ do
         (_, _, _, ph) <- createProcess (proc cmd args)
