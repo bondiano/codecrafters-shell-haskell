@@ -12,8 +12,6 @@ dependencies:
 
 library:
   source-dirs: src
-  exposed-modules:
-    - Shell.Parser
 
 executables:
   codecrafters-shell-exe:
@@ -27,3 +25,14 @@ executables:
       - -with-rtsopts=-N
       - -Wall
       - -Werror=incomplete-patterns
+
+tests:
+  codecrafters-shell-test:
+    main: Test.hs
+    source-dirs: test
+    dependencies:
+      - codecrafters-shell
+      - tasty
+      - tasty-hunit
+    ghc-options:
+      - -Wall
