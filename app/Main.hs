@@ -5,7 +5,7 @@ import Control.Monad (unless, void)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
-import System.Directory (doesFileExist, executable, getPermissions, getCurrentDirectory, setCurrentDirectory)
+import System.Directory (doesFileExist, executable, getPermissions, getCurrentDirectory, setCurrentDirectory, doesDirectoryExist)
 import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
@@ -76,7 +76,8 @@ execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
 execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= putStrLn
-execute (BuiltinCmd (CD dir)) = liftIO $ setCurrentDirectory dir
+execute (BuiltinCmd (CD "")) = liftIO $ putStrLn "cd: missing arguments"
+execute (BuiltinCmd (CD dir)) = liftIO $ changeDirectory dir
 execute (External cmd args) = do
     result <- liftIO $ try $ do
         (_, _, _, ph) <- createProcess (proc cmd args)
@@ -88,6 +89,13 @@ execute (External cmd args) = do
             | isPermissionError e -> putStrLn $ cmd ++ ": permission denied"
             | otherwise -> putStrLn $ cmd ++ ": " ++ show e
         Right () -> pure ()
+
+changeDirectory :: String -> IO ()
+changeDirectory dir = do
+    exists <- doesDirectoryExist dir
+    if not exists
+        then putStrLn $ dir ++ ": no such directory"
+        else setCurrentDirectory dir
 
 toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
