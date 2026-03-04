@@ -94,7 +94,7 @@ changeDirectory :: String -> IO ()
 changeDirectory dir = do
     exists <- doesDirectoryExist dir
     if not exists
-        then putStrLn $ "cd: " ++ dir ++ ": no such directory"
+        then putStrLn $ "cd: " ++ dir ++ ": No such file or directory"
         else setCurrentDirectory dir
 
 toExitCode :: Int -> ExitCode
