@@ -5,7 +5,7 @@ import Control.Monad (unless, void)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
-import System.Directory (doesDirectoryExist, doesFileExist, executable, getCurrentDirectory, getPermissions, setCurrentDirectory, getHomeDirectory)
+import System.Directory (doesDirectoryExist, doesFileExist, executable, getCurrentDirectory, getHomeDirectory, getPermissions, setCurrentDirectory)
 import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
@@ -33,7 +33,7 @@ buildEnv :: IO Env
 buildEnv = do
     paths <- buildEnvPath
     home <- getHomeDirectory
-    pure Env {envPaths = paths, homeDir = home}
+    return Env{envPaths = paths, homeDir = home}
 
 buildEnvPath :: IO [FilePath]
 buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
@@ -54,8 +54,8 @@ parseExitCode [] = 0
 parseExitCode (x : _) = fromMaybe 0 (readMaybe x)
 
 typeOfCommand :: Command -> Shell String
-typeOfCommand Empty = pure ""
-typeOfCommand (BuiltinCmd b) = pure $ builtinName b ++ " is a shell builtin"
+typeOfCommand Empty = return ""
+typeOfCommand (BuiltinCmd b) = return $ builtinName b ++ " is a shell builtin"
 typeOfCommand (External cmd _) = do
     env <- ask
     mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
@@ -71,11 +71,11 @@ getExecutablePathFromPaths dirs cmd =
 isExecutable :: FilePath -> IO Bool
 isExecutable path = do
     exists <- doesFileExist path
-    if exists then executable <$> getPermissions path else pure False
+    if exists then executable <$> getPermissions path else return False
 
 execute :: Command -> Shell ()
-execute Empty = pure ()
-execute (BuiltinCmd (Type "")) = pure ()
+execute Empty = return ()
+execute (BuiltinCmd (Type "")) = return ()
 execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
@@ -85,9 +85,10 @@ execute (BuiltinCmd (CD (Just cdDir))) = do
     env <- ask
     let dir = resolveHomeDir (homeDir env) cdDir
     exists <- liftIO $ doesDirectoryExist dir
-    liftIO $ if exists
-        then setCurrentDirectory dir
-        else putStrLn $ "cd: " ++ dir ++ ": No such file or directory"
+    liftIO $
+        if exists
+            then setCurrentDirectory dir
+            else putStrLn $ "cd: " ++ dir ++ ": No such file or directory"
 execute (External cmd args) = do
     result <- liftIO $ try $ do
         (_, _, _, ph) <- createProcess (proc cmd args)
@@ -98,13 +99,13 @@ execute (External cmd args) = do
             | isDoesNotExistError e -> putStrLn $ cmd ++ ": command not found"
             | isPermissionError e -> putStrLn $ cmd ++ ": permission denied"
             | otherwise -> putStrLn $ cmd ++ ": " ++ show e
-        Right () -> pure ()
+        Right () -> return ()
 
 resolveHomeDir :: FilePath -> FilePath -> FilePath
 resolveHomeDir homeDirictory path = case path of
     "~" -> homeDirictory
     "~/" -> homeDirictory
-    '~':rest -> homeDirictory </> rest
+    '~' : rest -> homeDirictory </> rest
     _ -> path
 
 toExitCode :: Int -> ExitCode
