@@ -1,0 +1,22 @@
+version: "3"
+
+tasks:
+  fmt:
+    desc: Format all Haskell source files with fourmolu
+    cmds:
+      - fourmolu -i app/ src/
+
+  lint:
+    desc: Check formatting without modifying files
+    cmds:
+      - fourmolu --mode check app/ src/
+
+  build:
+    desc: Build the project
+    cmds:
+      - stack build
+
+  submit:
+    desc: Submit to CodeCrafters
+    cmds:
+      - codecrafters submit
