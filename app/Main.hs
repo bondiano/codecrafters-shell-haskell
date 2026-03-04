@@ -5,7 +5,7 @@ import Control.Monad (unless, void)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
-import System.Directory (doesFileExist, executable, getPermissions, getCurrentDirectory, setCurrentDirectory, doesDirectoryExist)
+import System.Directory (doesDirectoryExist, doesFileExist, executable, getCurrentDirectory, getPermissions, setCurrentDirectory, getHomeDirectory)
 import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath (splitSearchPath, (</>))
@@ -14,11 +14,11 @@ import System.IO.Error (isDoesNotExistError, isPermissionError)
 import System.Process (createProcess, proc, waitForProcess)
 import Text.Read (readMaybe)
 
-data Builtin = Exit Int | Echo String | Type String | PWD | CD String
+data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath)
 
 data Command = BuiltinCmd Builtin | External String [String] | Empty
 
-newtype Env = Env {envPaths :: [FilePath]}
+data Env = Env {envPaths :: [FilePath], homeDir :: FilePath}
 
 type Shell = ReaderT Env IO
 
@@ -30,7 +30,10 @@ builtinName PWD = "pwd"
 builtinName (CD _) = "cd"
 
 buildEnv :: IO Env
-buildEnv = Env <$> buildEnvPath
+buildEnv = do
+    paths <- buildEnvPath
+    home <- getHomeDirectory
+    pure Env {envPaths = paths, homeDir = home}
 
 buildEnvPath :: IO [FilePath]
 buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
@@ -41,7 +44,8 @@ parseCommand input = case words input of
     ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
     ("type" : args) -> BuiltinCmd $ Type $ unwords args
     ("pwd" : _) -> BuiltinCmd PWD
-    ("cd" : args) -> BuiltinCmd $ CD $ unwords args
+    ["cd"] -> BuiltinCmd $ CD Nothing
+    ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
     (cmd : args) -> External cmd args
     [] -> Empty
 
@@ -76,8 +80,14 @@ execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
 execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= putStrLn
-execute (BuiltinCmd (CD "")) = liftIO $ putStrLn "cd: missing arguments"
-execute (BuiltinCmd (CD dir)) = liftIO $ changeDirectory dir
+execute (BuiltinCmd (CD Nothing)) = liftIO $ putStrLn "cd: missing arguments"
+execute (BuiltinCmd (CD (Just cdDir))) = do
+    env <- ask
+    let dir = resolveHomeDir (homeDir env) cdDir
+    exists <- liftIO $ doesDirectoryExist dir
+    liftIO $ if exists
+        then setCurrentDirectory dir
+        else putStrLn $ "cd: " ++ dir ++ ": No such file or directory"
 execute (External cmd args) = do
     result <- liftIO $ try $ do
         (_, _, _, ph) <- createProcess (proc cmd args)
@@ -90,12 +100,12 @@ execute (External cmd args) = do
             | otherwise -> putStrLn $ cmd ++ ": " ++ show e
         Right () -> pure ()
 
-changeDirectory :: String -> IO ()
-changeDirectory dir = do
-    exists <- doesDirectoryExist dir
-    if not exists
-        then putStrLn $ "cd: " ++ dir ++ ": No such file or directory"
-        else setCurrentDirectory dir
+resolveHomeDir :: FilePath -> FilePath -> FilePath
+resolveHomeDir homeDirictory path = case path of
+    "~" -> homeDirictory
+    "~/" -> homeDirictory
+    '~':rest -> homeDirictory </> rest
+    _ -> path
 
 toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
