@@ -4,7 +4,7 @@ import Control.Exception (IOException, try)
 import Control.Monad (unless, void)
 import Control.Monad.ListM (findM)
 import Control.Monad.Reader
-import Data.Maybe (fromMaybe)
+import Shell.Parser
 import System.Directory (doesDirectoryExist, doesFileExist, executable, getCurrentDirectory, getHomeDirectory, getPermissions, setCurrentDirectory)
 import System.Environment
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
@@ -12,22 +12,10 @@ import System.FilePath (splitSearchPath, (</>))
 import System.IO (hFlush, isEOF, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
 import System.Process (createProcess, proc, waitForProcess)
-import Text.Read (readMaybe)
-
-data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath)
-
-data Command = BuiltinCmd Builtin | External String [String] | Empty
 
 data Env = Env {envPaths :: [FilePath], homeDir :: FilePath}
 
 type Shell = ReaderT Env IO
-
-builtinName :: Builtin -> String
-builtinName (Exit _) = "exit"
-builtinName (Echo _) = "echo"
-builtinName (Type _) = "type"
-builtinName PWD = "pwd"
-builtinName (CD _) = "cd"
 
 buildEnv :: IO Env
 buildEnv = do
@@ -37,21 +25,6 @@ buildEnv = do
 
 buildEnvPath :: IO [FilePath]
 buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
-
-parseCommand :: String -> Command
-parseCommand input = case words input of
-    ("exit" : args) -> BuiltinCmd $ Exit $ parseExitCode args
-    ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
-    ("type" : args) -> BuiltinCmd $ Type $ unwords args
-    ("pwd" : _) -> BuiltinCmd PWD
-    ["cd"] -> BuiltinCmd $ CD Nothing
-    ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
-    (cmd : args) -> External cmd args
-    [] -> Empty
-
-parseExitCode :: [String] -> Int
-parseExitCode [] = 0
-parseExitCode (x : _) = fromMaybe 0 (readMaybe x)
 
 typeOfCommand :: Command -> Shell String
 typeOfCommand Empty = return ""
@@ -82,8 +55,8 @@ execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO 
 execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= putStrLn
 execute (BuiltinCmd (CD Nothing)) = liftIO $ putStrLn "cd: missing arguments"
 execute (BuiltinCmd (CD (Just cdDir))) = do
-    env <- ask
-    let dir = resolveHomeDir (homeDir env) cdDir
+    Env {homeDir = homeDirectory} <- ask
+    let dir = resolveHomeDir homeDirectory cdDir
     exists <- liftIO $ doesDirectoryExist dir
     liftIO $
         if exists
