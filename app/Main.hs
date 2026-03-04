@@ -13,18 +13,13 @@ import System.IO (hFlush, isEOF, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
 import System.Process (createProcess, proc, waitForProcess)
 import Text.Read (readMaybe)
+import System.Directory.OsPath (getCurrentDirectory)
 
-data Builtin = Exit Int | Echo String | Type String
+data Builtin = Exit Int | Echo String | Type String | PWD
 
 data Command = BuiltinCmd Builtin | External String [String] | Empty
 
 newtype Env = Env {envPaths :: [FilePath]}
-
-buildEnvPath :: IO [FilePath]
-buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
-
-buildEnv :: IO Env
-buildEnv = Env <$> buildEnvPath
 
 type Shell = ReaderT Env IO
 
@@ -32,6 +27,13 @@ builtinName :: Builtin -> String
 builtinName (Exit _) = "exit"
 builtinName (Echo _) = "echo"
 builtinName (Type _) = "type"
+builtinName PWD = "pwd"
+
+buildEnv :: IO Env
+buildEnv = Env <$> buildEnvPath
+
+buildEnvPath :: IO [FilePath]
+buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
 
 parseCommand :: String -> Command
 parseCommand input = case words input of
@@ -45,19 +47,6 @@ parseExitCode :: [String] -> Int
 parseExitCode [] = 0
 parseExitCode (x : _) = fromMaybe 0 (readMaybe x)
 
-toExitCode :: Int -> ExitCode
-toExitCode 0 = ExitSuccess
-toExitCode code = ExitFailure code
-
-isExecutable :: FilePath -> IO Bool
-isExecutable path = do
-    exists <- doesFileExist path
-    if exists then executable <$> getPermissions path else pure False
-
-getExecutablePathFromPaths :: [FilePath] -> String -> IO (Maybe String)
-getExecutablePathFromPaths dirs cmd =
-    fmap (</> cmd) <$> findM (\d -> isExecutable (d </> cmd)) dirs
-
 typeOfCommand :: Command -> Shell String
 typeOfCommand Empty = pure ""
 typeOfCommand (BuiltinCmd b) = pure $ builtinName b ++ " is a shell builtin"
@@ -69,12 +58,22 @@ typeOfCommand (External cmd _) = do
         Just path -> cmd ++ " is " ++ path
         Nothing -> cmd ++ ": not found"
 
+getExecutablePathFromPaths :: [FilePath] -> String -> IO (Maybe String)
+getExecutablePathFromPaths dirs cmd =
+    fmap (</> cmd) <$> findM (\d -> isExecutable (d </> cmd)) dirs
+
+isExecutable :: FilePath -> IO Bool
+isExecutable path = do
+    exists <- doesFileExist path
+    if exists then executable <$> getPermissions path else pure False
+
 execute :: Command -> Shell ()
 execute Empty = pure ()
 execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
 execute (BuiltinCmd (Type "")) = pure ()
 execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
+execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= print
 execute (External cmd args) = do
     result <- liftIO $ try $ do
         (_, _, _, ph) <- createProcess (proc cmd args)
@@ -87,6 +86,15 @@ execute (External cmd args) = do
             | otherwise -> putStrLn $ cmd ++ ": " ++ show e
         Right () -> pure ()
 
+toExitCode :: Int -> ExitCode
+toExitCode 0 = ExitSuccess
+toExitCode code = ExitFailure code
+
+main :: IO ()
+main = do
+    env <- buildEnv
+    runReaderT repl env
+
 repl :: Shell ()
 repl = do
     liftIO $ putStr "$ " >> hFlush stdout
@@ -96,8 +104,3 @@ repl = do
         input <- liftIO getLine
         unless (null input) $ execute (parseCommand input)
         repl
-
-main :: IO ()
-main = do
-    env <- buildEnv
-    runReaderT repl env
