@@ -50,6 +50,9 @@ parseArgs = finalize . go ParseState { quoteState = Unquoted, currentToken = Not
     go st@ParseState{quoteState = Unquoted} (' ' : rest) = case currentToken st of
         Just t  -> go st{currentToken = Nothing, tokens = reverse t : tokens st} rest
         Nothing -> go st rest
+    -- Backslash outside quotes — escape next char
+    go st@ParseState{quoteState = Unquoted} ('\\' : next : rest) =
+        go st{currentToken = Just (next : fromMaybe [] (currentToken st))} rest
     -- Any char inside quotes or outside — append
     go st (c : rest) =
         go st { currentToken = Just (c : fromMaybe [] (currentToken st)) } rest

@@ -61,6 +61,34 @@ tests =
         , testCase "unquoted + double" $ parseArgs "hello\"world foo\"bar" @?= ["helloworld foobar"]
         ]
     , testGroup
+        "backslash outside quotes"
+        [ testCase "escaped spaces in word" $
+            parseArgs "three\\ \\ \\ spaces" @?= ["three   spaces"]
+        , testCase "escaped space then unescaped spaces" $
+            parseArgs "before\\     after" @?= ["before ", "after"]
+        , testCase "backslash + regular char" $
+            parseArgs "test\\nexample" @?= ["testnexample"]
+        , testCase "escaped backslash" $
+            parseArgs "hello\\\\world" @?= ["hello\\world"]
+        , testCase "escaped single quotes" $
+            parseArgs "\\'hello\\'" @?= ["'hello'"]
+        , testCase "escaped double quotes" $
+            parseArgs "\\\"hello\\\"" @?= ["\"hello\""]
+        , testCase "multiple escaped spaces (echo)" $
+            parseArgs "echo multiple\\ \\ \\ \\ spaces" @?= ["echo", "multiple    spaces"]
+        , testCase "escaped quotes in echo" $
+            parseArgs "echo \\'\\\"literal quotes\\\"\\'" @?= ["echo", "'\"literal", "quotes\"'"]
+        , testCase "backslash + underscore" $
+            parseArgs "echo ignore\\_backslash" @?= ["echo", "ignore_backslash"]
+        , testCase "cat with backslash in paths" $
+            parseArgs "cat /tmp/\\_ignored_1 /tmp/ignore_\\2 /tmp/just_one_\\\\_3"
+              @?= ["cat", "/tmp/_ignored_1", "/tmp/ignore_2", "/tmp/just_one_\\_3"]
+        , testCase "trailing backslash" $
+            parseArgs "hello\\" @?= ["hello\\"]
+        , testCase "backslash only" $
+            parseArgs "\\" @?= ["\\"]
+        ]
+    , testGroup
         "challenge examples"
         [ testCase "echo shell hello" $ parseArgs "echo 'shell hello'" @?= ["echo", "shell hello"]
         , testCase "cat with two paths" $
