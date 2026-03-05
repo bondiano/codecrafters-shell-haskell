@@ -6,7 +6,7 @@ module Shell.Parser (
     parseArgs,
 ) where
 
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Text.Read (readMaybe)
 
 data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath)
@@ -20,20 +20,39 @@ builtinName (Type _) = "type"
 builtinName PWD = "pwd"
 builtinName (CD _) = "cd"
 
-parseArgs :: String -> [String]
-parseArgs = finalize . go False False [] []
-  where
-    finalize (hasToken, token, acc)
-        | hasToken = reverse $ reverse token : acc
-        | otherwise = reverse acc
+data QuoteState = Unquoted | InSingle | InDouble
 
-    go _ hasToken token acc [] = (hasToken, token, acc)
-    go inQuote _ token acc ('\'' : rest) = go (not inQuote) True token acc rest
-    go True _ token acc (c : rest) = go True True (c : token) acc rest
-    go False hasToken token acc (' ' : rest)
-        | hasToken = go False False [] (reverse token : acc) rest
-        | otherwise = go False False [] acc rest
-    go False _ token acc (c : rest) = go False True (c : token) acc rest
+data ParseState = ParseState {
+    quoteState :: QuoteState
+    , currentToken :: Maybe String
+    , tokens :: [String]
+}
+
+parseArgs :: String -> [String]
+parseArgs = finalize . go ParseState { quoteState = Unquoted, currentToken = Nothing, tokens = [] }
+  where
+    finalize state = reverse $ case currentToken state of
+        Nothing -> tokens state
+        Just token -> reverse token : tokens state
+
+    go :: ParseState -> String -> ParseState
+    go st [] = st
+    -- Quote toggles
+    go st@ParseState{quoteState = Unquoted} ('\'' : rest) =
+        go st{quoteState = InSingle, currentToken = Just (fromMaybe [] (currentToken st))} rest
+    go st@ParseState{quoteState = Unquoted} ('"' : rest) =
+        go st{quoteState = InDouble, currentToken = Just (fromMaybe [] (currentToken st))} rest
+    go st@ParseState{quoteState = InSingle} ('\'' : rest) =
+        go st{quoteState = Unquoted} rest
+    go st@ParseState{quoteState = InDouble} ('"' : rest) =
+        go st{quoteState = Unquoted} rest
+    -- Space outside quotes — flush token
+    go st@ParseState{quoteState = Unquoted} (' ' : rest) = case currentToken st of
+        Just t  -> go st{currentToken = Nothing, tokens = reverse t : tokens st} rest
+        Nothing -> go st rest
+    -- Any char inside quotes or outside — append
+    go st (c : rest) =
+        go st { currentToken = Just (c : fromMaybe [] (currentToken st)) } rest
 
 parseCommand :: String -> Command
 parseCommand input = case parseArgs input of
