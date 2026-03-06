@@ -22,14 +22,14 @@ builtinName (CD _) = "cd"
 
 data QuoteState = Unquoted | InSingle | InDouble
 
-data ParseState = ParseState {
-    quoteState :: QuoteState
+data ParseState = ParseState
+    { quoteState :: QuoteState
     , currentToken :: Maybe String
     , tokens :: [String]
-}
+    }
 
 parseArgs :: String -> [String]
-parseArgs = finalize . go ParseState { quoteState = Unquoted, currentToken = Nothing, tokens = [] }
+parseArgs = finalize . go ParseState{quoteState = Unquoted, currentToken = Nothing, tokens = []}
   where
     finalize state = reverse $ case currentToken state of
         Nothing -> tokens state
@@ -46,16 +46,20 @@ parseArgs = finalize . go ParseState { quoteState = Unquoted, currentToken = Not
         go st{quoteState = Unquoted} rest
     go st@ParseState{quoteState = InDouble} ('"' : rest) =
         go st{quoteState = Unquoted} rest
+    -- Backslash inside double quotes
+    go st@ParseState{quoteState = InDouble} ('\\' : next : rest)
+        | next `elem` ['\\', '"'] = go st{currentToken = Just (next : fromMaybe [] (currentToken st))} rest
+        | otherwise = go st{currentToken = Just (next : '\\' : fromMaybe [] (currentToken st))} rest
     -- Space outside quotes — flush token
     go st@ParseState{quoteState = Unquoted} (' ' : rest) = case currentToken st of
-        Just t  -> go st{currentToken = Nothing, tokens = reverse t : tokens st} rest
+        Just t -> go st{currentToken = Nothing, tokens = reverse t : tokens st} rest
         Nothing -> go st rest
     -- Backslash outside quotes — escape next char
     go st@ParseState{quoteState = Unquoted} ('\\' : next : rest) =
         go st{currentToken = Just (next : fromMaybe [] (currentToken st))} rest
     -- Any char inside quotes or outside — append
     go st (c : rest) =
-        go st { currentToken = Just (c : fromMaybe [] (currentToken st)) } rest
+        go st{currentToken = Just (c : fromMaybe [] (currentToken st))} rest
 
 parseCommand :: String -> Command
 parseCommand input = case parseArgs input of

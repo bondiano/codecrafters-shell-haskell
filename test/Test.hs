@@ -103,6 +103,26 @@ tests =
               @?= ["cat", "/tmp/no slash 1", "/tmp/one slash \\2", "/tmp/two slashes \\\\3"]
         ]
     , testGroup
+        "backslash inside double quotes"
+        [ testCase "escaped backslash" $
+            parseArgs "echo \"A \\\\ escapes itself\"" @?= ["echo", "A \\ escapes itself"]
+        , testCase "escaped double quote" $
+            parseArgs "echo \"A \\\" inside double quotes\"" @?= ["echo", "A \" inside double quotes"]
+        , testCase "backslash before normal char is literal" $
+            parseArgs "echo \"just'one'\\\\n'backslash\"" @?= ["echo", "just'one'\\n'backslash"]
+        , testCase "escaped quote then unquoted" $
+            parseArgs "echo \"inside\\\"literal_quote.\"outside\\\"" @?= ["echo", "inside\"literal_quote.outside\""]
+        , testCase "cat with backslash in double-quoted paths" $
+            parseArgs "cat /tmp/\"number 1\" /tmp/\"doublequote \\\" 2\" /tmp/\"backslash \\\\ 3\""
+              @?= ["cat", "/tmp/number 1", "/tmp/doublequote \" 2", "/tmp/backslash \\ 3"]
+        , testCase "backslash before letter is literal (both chars kept)" $
+            parseArgs "echo \"hello\\nworld\"" @?= ["echo", "hello\\nworld"]
+        , testCase "multiple escaped quotes" $
+            parseArgs "echo \"\\\"hello\\\"\"" @?= ["echo", "\"hello\""]
+        , testCase "backslash at end of double quotes" $
+            parseArgs "echo \"trailing\\\\\"" @?= ["echo", "trailing\\"]
+        ]
+    , testGroup
         "challenge examples"
         [ testCase "echo shell hello" $ parseArgs "echo 'shell hello'" @?= ["echo", "shell hello"]
         , testCase "cat with two paths" $

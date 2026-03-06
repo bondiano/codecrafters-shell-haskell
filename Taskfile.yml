@@ -16,6 +16,11 @@ tasks:
     cmds:
       - stack build
 
+  test:
+    desc: Run tests
+    cmds:
+      - stack test
+
   submit:
     desc: Submit to CodeCrafters
     cmds:
