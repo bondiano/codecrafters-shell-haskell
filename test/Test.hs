@@ -89,6 +89,20 @@ tests =
             parseArgs "\\" @?= ["\\"]
         ]
     , testGroup
+        "backslash inside single quotes"
+        [ testCase "backslashes are literal" $
+            parseArgs "echo 'shell\\\\\\nscript'" @?= ["echo", "shell\\\\\\nscript"]
+        , testCase "backslash + double quote is literal" $
+            parseArgs "echo 'example\\\"test'" @?= ["echo", "example\\\"test"]
+        , testCase "multiple backslashes" $
+            parseArgs "echo 'multiple\\\\slashes'" @?= ["echo", "multiple\\\\slashes"]
+        , testCase "backslash-quote pairs are literal" $
+            parseArgs "echo 'every\\\"thing_is\\\"literal'" @?= ["echo", "every\\\"thing_is\\\"literal"]
+        , testCase "cat with backslash in single-quoted paths" $
+            parseArgs "cat /tmp/'no slash 1' /tmp/'one slash \\2' /tmp/'two slashes \\\\3'"
+              @?= ["cat", "/tmp/no slash 1", "/tmp/one slash \\2", "/tmp/two slashes \\\\3"]
+        ]
+    , testGroup
         "challenge examples"
         [ testCase "echo shell hello" $ parseArgs "echo 'shell hello'" @?= ["echo", "shell hello"]
         , testCase "cat with two paths" $
