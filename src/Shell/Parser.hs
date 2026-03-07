@@ -1,6 +1,9 @@
 module Shell.Parser (
     Builtin (..),
     Command (..),
+    CommandBody (..),
+    Redirect (..),
+    RedirectMode (..),
     builtinName,
     parseCommand,
     parseArgs,
@@ -11,7 +14,11 @@ import Text.Read (readMaybe)
 
 data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath)
 
-data Command = BuiltinCmd Builtin | External String [String] | Empty
+data RedirectMode = Overwrite | Append deriving (Eq, Show)
+data Redirect = Redirect {target :: FilePath, mode :: RedirectMode} deriving (Eq, Show)
+
+data CommandBody = BuiltinCmd Builtin | External String [String] | Empty
+data Command = Command {body :: CommandBody, stdoutRedirect :: Maybe Redirect}
 
 builtinName :: Builtin -> String
 builtinName (Exit _) = "exit"
@@ -61,16 +68,28 @@ parseArgs = finalize . go ParseState{quoteState = Unquoted, currentToken = Nothi
     go st (c : rest) =
         go st{currentToken = Just (c : fromMaybe [] (currentToken st))} rest
 
+extractRedirect :: [String] -> ([String], Maybe Redirect)
+extractRedirect = go []
+  where
+    go acc [] = (reverse acc, Nothing)
+    go acc (op : file : rest)
+        | op `elem` [">", "1>"] = (reverse acc ++ rest, Just (Redirect file Overwrite))
+    go acc (t : rest) = go (t : acc) rest
+
 parseCommand :: String -> Command
-parseCommand input = case parseArgs input of
-    ("exit" : args) -> BuiltinCmd $ Exit $ parseExitCode args
-    ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
-    ("type" : args) -> BuiltinCmd $ Type $ unwords args
-    ("pwd" : _) -> BuiltinCmd PWD
-    ["cd"] -> BuiltinCmd $ CD Nothing
-    ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
-    (cmd : args) -> External cmd args
-    [] -> Empty
+parseCommand input =
+    let allTokens = parseArgs input
+        (cmdTokens, redirect) = extractRedirect allTokens
+        cmdBody = case cmdTokens of
+            ("exit" : args) -> BuiltinCmd $ Exit $ parseExitCode args
+            ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
+            ("type" : args) -> BuiltinCmd $ Type $ unwords args
+            ("pwd" : _) -> BuiltinCmd PWD
+            ["cd"] -> BuiltinCmd $ CD Nothing
+            ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
+            (cmd : args) -> External cmd args
+            [] -> Empty
+     in Command{body = cmdBody, stdoutRedirect = redirect}
 
 parseExitCode :: [String] -> Int
 parseExitCode [] = 0

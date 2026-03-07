@@ -6,23 +6,39 @@ import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader
 import Shell.Env (Env (..), Shell)
-import Shell.Parser (Builtin (..), Command (..), builtinName, parseCommand)
+import Shell.Parser (Builtin (..), Command (..), CommandBody (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
+import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (createProcess, proc, waitForProcess)
+import System.Process (CreateProcess (..), StdStream (..), createProcess, proc, waitForProcess)
 
 execute :: Command -> Shell ()
-execute Empty = return ()
-execute (BuiltinCmd (Type "")) = return ()
-execute (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
-execute (BuiltinCmd (Echo str)) = liftIO (putStrLn str)
-execute (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . putStrLn
-execute (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= putStrLn
-execute (BuiltinCmd (CD Nothing)) = liftIO $ putStrLn "cd: missing arguments"
-execute (BuiltinCmd (CD (Just cdDir))) = do
+execute (Command cmdBody redirect) = do
+    handle <- liftIO $ openRedirect redirect
+    executeBody handle cmdBody
+    liftIO $ closeRedirect redirect handle
+
+openRedirect :: Maybe Redirect -> IO Handle
+openRedirect Nothing = return stdout
+openRedirect (Just (Redirect path Overwrite)) = openFile path WriteMode
+openRedirect (Just (Redirect path Append)) = openFile path AppendMode
+
+closeRedirect :: Maybe Redirect -> Handle -> IO ()
+closeRedirect Nothing _ = return ()
+closeRedirect (Just _) h = hClose h
+
+executeBody :: Handle -> CommandBody -> Shell ()
+executeBody _ Empty = return ()
+executeBody _ (BuiltinCmd (Type "")) = return ()
+executeBody _ (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
+executeBody h (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
+executeBody h (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h
+executeBody h (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
+executeBody _ (BuiltinCmd (CD Nothing)) = liftIO $ putStrLn "cd: missing arguments"
+executeBody _ (BuiltinCmd (CD (Just cdDir))) = do
     Env{homeDir = homeDirectory} <- ask
     let dir = resolveHomeDir homeDirectory cdDir
     exists <- liftIO $ doesDirectoryExist dir
@@ -30,9 +46,10 @@ execute (BuiltinCmd (CD (Just cdDir))) = do
         if exists
             then setCurrentDirectory dir
             else putStrLn $ "cd: " ++ dir ++ ": No such file or directory"
-execute (External cmd args) = do
+executeBody h (External cmd args) = do
+    let p = (proc cmd args){std_out = UseHandle h}
     result <- liftIO $ try $ do
-        (_, _, _, ph) <- createProcess (proc cmd args)
+        (_, _, _, ph) <- createProcess p
         void $ waitForProcess ph
 
     liftIO $ case (result :: Either IOException ()) of
@@ -43,9 +60,9 @@ execute (External cmd args) = do
         Right () -> return ()
 
 typeOfCommand :: Command -> Shell String
-typeOfCommand Empty = return ""
-typeOfCommand (BuiltinCmd b) = return $ builtinName b ++ " is a shell builtin"
-typeOfCommand (External cmd _) = do
+typeOfCommand (Command Empty _) = return ""
+typeOfCommand (Command (BuiltinCmd b) _) = return $ builtinName b ++ " is a shell builtin"
+typeOfCommand (Command (External cmd _) _) = do
     env <- ask
     mbPath <- liftIO $ getExecutablePathFromPaths (envPaths env) cmd
     return $ case mbPath of

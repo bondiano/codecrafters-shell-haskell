@@ -1,14 +1,56 @@
 module Main where
 
-import Shell.Parser (parseArgs)
+import Shell.Parser (Command (..), CommandBody (..), Builtin (..), Redirect (..), RedirectMode (..), parseArgs, parseCommand)
 import Test.Tasty
 import Test.Tasty.HUnit
 
 main :: IO ()
-main = defaultMain tests
+main = defaultMain $ testGroup "Shell" [parseArgsTests, redirectTests]
 
-tests :: TestTree
-tests =
+redirectTests :: TestTree
+redirectTests =
+  testGroup
+    "redirect parsing"
+    [ testCase "echo with >" $ do
+        let Command b r = parseCommand "echo hello > file.txt"
+        assertBody b (BuiltinCmd (Echo "hello"))
+        r @?= Just (Redirect "file.txt" Overwrite)
+    , testCase "echo with 1>" $ do
+        let Command b r = parseCommand "echo hello 1> file.txt"
+        assertBody b (BuiltinCmd (Echo "hello"))
+        r @?= Just (Redirect "file.txt" Overwrite)
+    , testCase "no redirect" $ do
+        let Command b r = parseCommand "echo hello"
+        assertBody b (BuiltinCmd (Echo "hello"))
+        r @?= Nothing
+    , testCase "external with redirect" $ do
+        let Command b r = parseCommand "ls /tmp > out.txt"
+        assertBody b (External "ls" ["/tmp"])
+        r @?= Just (Redirect "out.txt" Overwrite)
+    , testCase "redirect with quoted filename" $ do
+        let Command b r = parseCommand "echo hi > 'my file.txt'"
+        assertBody b (BuiltinCmd (Echo "hi"))
+        r @?= Just (Redirect "my file.txt" Overwrite)
+    , testCase "empty command is preserved" $ do
+        let Command b r = parseCommand ""
+        assertBody b Empty
+        r @?= Nothing
+    ]
+
+assertBody :: CommandBody -> CommandBody -> Assertion
+assertBody (BuiltinCmd (Echo a)) (BuiltinCmd (Echo b)) = a @?= b
+assertBody (External a as) (External b bs) = do a @?= b; as @?= bs
+assertBody Empty Empty = return ()
+assertBody got expected = assertFailure $ "Expected " ++ showBody expected ++ " but got " ++ showBody got
+
+showBody :: CommandBody -> String
+showBody (BuiltinCmd (Echo s)) = "Echo " ++ show s
+showBody (External cmd args) = "External " ++ show cmd ++ " " ++ show args
+showBody Empty = "Empty"
+showBody _ = "CommandBody"
+
+parseArgsTests :: TestTree
+parseArgsTests =
   testGroup
     "parseArgs"
     [ testGroup
