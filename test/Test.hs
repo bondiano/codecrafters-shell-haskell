@@ -91,6 +91,29 @@ redirectTests =
                 er @?= Nothing
             ]
         , testGroup
+            "stderr append redirect"
+            [ testCase "external with 2>>" $ do
+                let Command{body = b, stdoutRedirect = r, stderrRedirect = er} = parseCommand "cat nonexistent 2>> errors.txt"
+                assertBody b (External "cat" ["nonexistent"])
+                r @?= Nothing
+                er @?= Just (Redirect "errors.txt" Append)
+            , testCase "ls with 2>>" $ do
+                let Command{body = b, stdoutRedirect = r, stderrRedirect = er} = parseCommand "ls nonexistent 2>> /tmp/foo/qux.md"
+                assertBody b (External "ls" ["nonexistent"])
+                r @?= Nothing
+                er @?= Just (Redirect "/tmp/foo/qux.md" Append)
+            , testCase "echo with 2>> does not redirect stdout" $ do
+                let Command{body = b, stdoutRedirect = r, stderrRedirect = er} = parseCommand "echo hello 2>> err.txt"
+                assertBody b (BuiltinCmd (Echo "hello"))
+                r @?= Nothing
+                er @?= Just (Redirect "err.txt" Append)
+            , testCase "2>> with quoted filename" $ do
+                let Command{body = b, stdoutRedirect = r, stderrRedirect = er} = parseCommand "ls bad 2>> 'my errors.txt'"
+                assertBody b (External "ls" ["bad"])
+                r @?= Nothing
+                er @?= Just (Redirect "my errors.txt" Append)
+            ]
+        , testGroup
             "both stdout and stderr redirects"
             [ testCase "stdout and stderr to different files" $ do
                 let Command{body = b, stdoutRedirect = r, stderrRedirect = er} = parseCommand "ls foo 1> out.txt 2> err.txt"

@@ -9,7 +9,7 @@ module Shell.Parser (
     parseArgs,
 ) where
 
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe)
 import Text.Read (readMaybe)
 
 data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath)
@@ -42,41 +42,55 @@ parseArgs = finalize . go ParseState{quoteState = Unquoted, currentToken = Nothi
         Nothing -> tokens state
         Just token -> reverse token : tokens state
 
+    appendChar :: Char -> ParseState -> ParseState
+    appendChar c st = st{currentToken = Just (c : fromMaybe [] (currentToken st))}
+
+    ensureToken :: ParseState -> ParseState
+    ensureToken st = st{currentToken = Just (fromMaybe [] (currentToken st))}
+
     go :: ParseState -> String -> ParseState
     go st [] = st
     -- Quote toggles
     go st@ParseState{quoteState = Unquoted} ('\'' : rest) =
-        go st{quoteState = InSingle, currentToken = Just (fromMaybe [] (currentToken st))} rest
+        go (ensureToken st){quoteState = InSingle} rest
     go st@ParseState{quoteState = Unquoted} ('"' : rest) =
-        go st{quoteState = InDouble, currentToken = Just (fromMaybe [] (currentToken st))} rest
+        go (ensureToken st){quoteState = InDouble} rest
     go st@ParseState{quoteState = InSingle} ('\'' : rest) =
         go st{quoteState = Unquoted} rest
     go st@ParseState{quoteState = InDouble} ('"' : rest) =
         go st{quoteState = Unquoted} rest
     -- Backslash inside double quotes
     go st@ParseState{quoteState = InDouble} ('\\' : next : rest)
-        | next `elem` ['\\', '"'] = go st{currentToken = Just (next : fromMaybe [] (currentToken st))} rest
-        | otherwise = go st{currentToken = Just (next : '\\' : fromMaybe [] (currentToken st))} rest
+        | next `elem` ['\\', '"'] = go (appendChar next st) rest
+        | otherwise = go (appendChar next $ appendChar '\\' st) rest
     -- Space outside quotes — flush token
     go st@ParseState{quoteState = Unquoted} (' ' : rest) = case currentToken st of
         Just t -> go st{currentToken = Nothing, tokens = reverse t : tokens st} rest
         Nothing -> go st rest
     -- Backslash outside quotes — escape next char
     go st@ParseState{quoteState = Unquoted} ('\\' : next : rest) =
-        go st{currentToken = Just (next : fromMaybe [] (currentToken st))} rest
+        go (appendChar next st) rest
     -- Any char inside quotes or outside — append
     go st (c : rest) =
-        go st{currentToken = Just (c : fromMaybe [] (currentToken st))} rest
+        go (appendChar c st) rest
+
+data RedirectFd = Stdout | Stderr deriving (Eq)
+
+classifyRedirect :: String -> Maybe (RedirectFd, RedirectMode)
+classifyRedirect op
+    | op `elem` [">", "1>"] = Just (Stdout, Overwrite)
+    | op `elem` [">>", "1>>"] = Just (Stdout, Append)
+    | op == "2>" = Just (Stderr, Overwrite)
+    | op == "2>>" = Just (Stderr, Append)
+    | otherwise = Nothing
 
 extractRedirects :: [String] -> ([String], Maybe Redirect, Maybe Redirect)
 extractRedirects = go [] Nothing Nothing
   where
     go acc stdoutR stderrR [] = (reverse acc, stdoutR, stderrR)
     go acc stdoutR stderrR (op : file : rest)
-        | op `elem` [">", "1>"] = go acc (Just (Redirect file Overwrite)) stderrR rest
-        | op == "2>" = go acc stdoutR (Just (Redirect file Overwrite)) rest
-        | op `elem` [">>", "1>>"] = go acc (Just (Redirect file Append)) stderrR rest
-        | op == "2>>" = go acc stdoutR (Just (Redirect file Append)) rest
+        | Just (Stdout, m) <- classifyRedirect op = go acc (Just (Redirect file m)) stderrR rest
+        | Just (Stderr, m) <- classifyRedirect op = go acc stdoutR (Just (Redirect file m)) rest
     go acc stdoutR stderrR (t : rest) = go (t : acc) stdoutR stderrR rest
 
 parseCommand :: String -> Command
