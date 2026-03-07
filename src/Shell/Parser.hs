@@ -76,6 +76,7 @@ extractRedirects = go [] Nothing Nothing
         | op `elem` [">", "1>"] = go acc (Just (Redirect file Overwrite)) stderrR rest
         | op == "2>" = go acc stdoutR (Just (Redirect file Overwrite)) rest
         | op `elem` [">>", "1>>"] = go acc (Just (Redirect file Append)) stderrR rest
+        | op == "2>>" = go acc stdoutR (Just (Redirect file Append)) rest
     go acc stdoutR stderrR (t : rest) = go (t : acc) stdoutR stderrR rest
 
 parseCommand :: String -> Command
