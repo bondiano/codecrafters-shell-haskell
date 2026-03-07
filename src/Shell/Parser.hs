@@ -18,7 +18,7 @@ data RedirectMode = Overwrite | Append deriving (Eq, Show)
 data Redirect = Redirect {target :: FilePath, mode :: RedirectMode} deriving (Eq, Show)
 
 data CommandBody = BuiltinCmd Builtin | External String [String] | Empty
-data Command = Command {body :: CommandBody, stdoutRedirect :: Maybe Redirect}
+data Command = Command {body :: CommandBody, stdoutRedirect :: Maybe Redirect, stderrRedirect :: Maybe Redirect}
 
 builtinName :: Builtin -> String
 builtinName (Exit _) = "exit"
@@ -68,18 +68,19 @@ parseArgs = finalize . go ParseState{quoteState = Unquoted, currentToken = Nothi
     go st (c : rest) =
         go st{currentToken = Just (c : fromMaybe [] (currentToken st))} rest
 
-extractRedirect :: [String] -> ([String], Maybe Redirect)
-extractRedirect = go []
+extractRedirects :: [String] -> ([String], Maybe Redirect, Maybe Redirect)
+extractRedirects = go [] Nothing Nothing
   where
-    go acc [] = (reverse acc, Nothing)
-    go acc (op : file : rest)
-        | op `elem` [">", "1>"] = (reverse acc ++ rest, Just (Redirect file Overwrite))
-    go acc (t : rest) = go (t : acc) rest
+    go acc stdoutR stderrR [] = (reverse acc, stdoutR, stderrR)
+    go acc stdoutR stderrR (op : file : rest)
+        | op `elem` [">", "1>"] = go acc (Just (Redirect file Overwrite)) stderrR rest
+        | op == "2>" = go acc stdoutR (Just (Redirect file Overwrite)) rest
+    go acc stdoutR stderrR (t : rest) = go (t : acc) stdoutR stderrR rest
 
 parseCommand :: String -> Command
 parseCommand input =
     let allTokens = parseArgs input
-        (cmdTokens, redirect) = extractRedirect allTokens
+        (cmdTokens, stdoutR, stderrR) = extractRedirects allTokens
         cmdBody = case cmdTokens of
             ("exit" : args) -> BuiltinCmd $ Exit $ parseExitCode args
             ("echo" : args) -> BuiltinCmd $ Echo $ unwords args
@@ -89,7 +90,7 @@ parseCommand input =
             ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
             (cmd : args) -> External cmd args
             [] -> Empty
-     in Command{body = cmdBody, stdoutRedirect = redirect}
+     in Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR}
 
 parseExitCode :: [String] -> Int
 parseExitCode [] = 0
