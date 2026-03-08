@@ -5,6 +5,7 @@ module Shell.Parser (
     Redirect (..),
     RedirectMode (..),
     builtinName,
+    builtinNames,
     parseCommand,
     parseArgs,
 ) where
@@ -26,6 +27,9 @@ builtinName (Echo _) = "echo"
 builtinName (Type _) = "type"
 builtinName PWD = "pwd"
 builtinName (CD _) = "cd"
+
+builtinNames :: [String]
+builtinNames = ["echo", "exit", "type", "pwd", "cd"]
 
 data QuoteState = Unquoted | InSingle | InDouble
 

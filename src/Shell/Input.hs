@@ -5,6 +5,7 @@
 module Shell.Input (readInput) where
 
 import Data.List (isPrefixOf)
+import Shell.Parser (builtinNames)
 import System.IO (
     BufferMode (NoBuffering),
     hFlush,
@@ -50,13 +51,10 @@ readInput = do
         hFlush stdout
         loop rest
 
-    builtins :: [String]
-    builtins = ["echo", "exit", "type", "pwd", "cd"]
-
     handleTab :: String -> IO (Maybe String)
     handleTab buf = do
         let text = reverse buf
-            matches = filter (text `isPrefixOf`) builtins
+            matches = filter (text `isPrefixOf`) builtinNames
         case matches of
             [match] -> do
                 let suffix = drop (length text) match ++ " "
