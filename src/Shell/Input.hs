@@ -61,4 +61,7 @@ readInput = do
                 hPutStr stdout suffix
                 hFlush stdout
                 loop (reverse (match ++ " "))
-            _ -> loop buf
+            _ -> do
+                hPutStr stdout "\x07"
+                hFlush stdout
+                loop buf
