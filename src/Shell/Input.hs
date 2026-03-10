@@ -5,7 +5,6 @@
 module Shell.Input (readInput) where
 
 import Data.List (isPrefixOf)
-import Shell.Parser (builtinNames)
 import System.IO (
     BufferMode (NoBuffering),
     hFlush,
@@ -21,8 +20,8 @@ import System.IO (
 Sets terminal to raw mode (no buffering, no echo), reads each char manually,
 and restores nothing — raw mode stays on for the whole session.
 -}
-readInput :: IO (Maybe String)
-readInput = do
+readInput :: [String] -> IO (Maybe String)
+readInput completions = do
     hSetBuffering stdin NoBuffering
     hSetEcho stdin False
     loop []
@@ -54,7 +53,7 @@ readInput = do
     handleTab :: String -> IO (Maybe String)
     handleTab buf = do
         let text = reverse buf
-            matches = filter (text `isPrefixOf`) builtinNames
+            matches = filter (text `isPrefixOf`) completions
         case matches of
             [match] -> do
                 let suffix = drop (length text) match ++ " "
