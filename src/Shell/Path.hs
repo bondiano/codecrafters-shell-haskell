@@ -4,6 +4,7 @@ module Shell.Path (
     isExecutable,
 ) where
 
+import Control.Monad (filterM)
 import Control.Monad.ListM (findM)
 import Data.List (nub)
 import System.Directory (doesDirectoryExist, doesFileExist, executable, getPermissions, listDirectory)
@@ -26,10 +27,5 @@ getExecutableNames dirs = nub . concat <$> mapM listExecutables dirs
         if exists
             then do
                 files <- listDirectory dir
-                filterM' (\f -> isExecutable (dir </> f)) files
+                filterM (\f -> isExecutable (dir </> f)) files
             else pure []
-    filterM' _ [] = pure []
-    filterM' p (x : xs) = do
-        keep <- p x
-        rest <- filterM' p xs
-        pure $ if keep then x : rest else rest

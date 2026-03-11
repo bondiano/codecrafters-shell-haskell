@@ -2,14 +2,13 @@ module Main (main) where
 
 import Control.Monad (unless)
 import Control.Monad.Reader (asks, liftIO, runReaderT)
-import Data.List (nub)
 import Shell
 import System.IO (hFlush, stdout)
 
 main :: IO ()
 main = do
     env <- buildEnv
-    runReaderT repl env
+    runReaderT (runShell repl) env
 
 repl :: Shell ()
 repl = do
@@ -17,7 +16,7 @@ repl = do
 
     paths <- asks envPaths
     execNames <- liftIO $ getExecutableNames paths
-    let completions = nub $ builtinNames ++ execNames
+    let completions = builtinNames ++ execNames
     result <- liftIO $ readInput completions
     case result of
         Nothing -> pure ()
