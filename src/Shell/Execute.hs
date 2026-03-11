@@ -2,31 +2,42 @@ module Shell.Execute (
     execute,
 ) where
 
-import Control.Exception (IOException, try)
+import Control.Exception (IOException, finally, try)
 import Control.Monad (void)
-import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..))
+import Control.Monad.Reader (ask, asks, liftIO)
+import Shell.Env (Env (..), Shell)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
-import System.IO (Handle, IOMode (..), hPutStrLn, stderr, stdout, withFile)
+import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
 import System.Process (CreateProcess (..), StdStream (..), createProcess, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
-    env <- ask
-    liftIO $
-        withRedirect stdout stdoutR $ \stdoutHandle ->
-            withRedirect stderr stderrR $ \stderrHandle ->
-                runReaderT (runShell $ executeBody stdoutHandle stderrHandle cmdBody) env
+    stdoutHandle <- liftIO $ openRedirect stdout stdoutR
+    stderrHandle <- liftIO $ openRedirect stderr stderrR
+    executeBody stdoutHandle stderrHandle cmdBody
+        `finally'` do
+            liftIO $ closeRedirect stdoutR stdoutHandle
+            liftIO $ closeRedirect stderrR stderrHandle
 
-withRedirect :: Handle -> Maybe Redirect -> (Handle -> IO a) -> IO a
-withRedirect fallback Nothing action = action fallback
-withRedirect _ (Just (Redirect path Overwrite)) action = withFile path WriteMode action
-withRedirect _ (Just (Redirect path Append)) action = withFile path AppendMode action
+finally' :: Shell a -> Shell b -> Shell a
+finally' action cleanup = do
+    result <- action
+    _ <- cleanup
+    pure result
+
+openRedirect :: Handle -> Maybe Redirect -> IO Handle
+openRedirect fallback Nothing = pure fallback
+openRedirect _ (Just (Redirect path Overwrite)) = openFile path WriteMode
+openRedirect _ (Just (Redirect path Append)) = openFile path AppendMode
+
+closeRedirect :: Maybe Redirect -> Handle -> IO ()
+closeRedirect Nothing _ = pure ()
+closeRedirect (Just _) h = hClose h
 
 executeBody :: Handle -> Handle -> CommandBody -> Shell ()
 executeBody _ _ Empty = return ()
