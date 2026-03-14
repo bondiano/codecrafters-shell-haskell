@@ -59,19 +59,37 @@ readInput completions = do
                 hPutStr stdout suffix
                 hFlush stdout
                 loop (reverse (match ++ " ")) 0
-            (_ : _ : _)
-                | tabCount >= 1 -> do
-                    hPutStr stdout $ "\n" ++ unwords' matches ++ "\n$ " ++ text
-                    hFlush stdout
-                    loop buf 0
-                | otherwise -> do
-                    hPutStr stdout "\x07"
-                    hFlush stdout
-                    loop buf 1
+            (_ : _ : _) ->
+                let prefix = longestCommonPrefix matches
+                 in if length prefix > length text
+                        then do
+                            let suffix = drop (length text) prefix
+                            hPutStr stdout suffix
+                            hFlush stdout
+                            loop (reverse prefix) 0
+                        else
+                            if tabCount >= 1
+                                then do
+                                    hPutStr stdout $ "\n" ++ unwords' matches ++ "\n$ " ++ text
+                                    hFlush stdout
+                                    loop buf 0
+                                else do
+                                    hPutStr stdout "\x07"
+                                    hFlush stdout
+                                    loop buf 1
             _ -> do
                 hPutStr stdout "\x07"
                 hFlush stdout
                 loop buf 0
+
+    longestCommonPrefix :: [String] -> String
+    longestCommonPrefix [] = ""
+    longestCommonPrefix xs = foldr1 commonPrefix xs
+
+    commonPrefix :: String -> String -> String
+    commonPrefix (a : as') (b : bs)
+        | a == b = a : commonPrefix as' bs
+    commonPrefix _ _ = ""
 
     unwords' :: [String] -> String
     unwords' [] = ""
