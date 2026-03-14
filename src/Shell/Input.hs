@@ -6,7 +6,6 @@ import Data.List (isPrefixOf, sort)
 import System.IO (
     BufferMode (NoBuffering),
     hFlush,
-    hGetChar,
     hPutStr,
     hSetBuffering,
     hSetEcho,
@@ -98,7 +97,7 @@ readInput completions = do
     loop (InputState "" 0)
   where
     loop st = do
-        c <- hGetChar stdin
+        c <- getChar
         case handleEvent completions (charToEvent c) st of
             Left result -> do
                 emit "\n"
