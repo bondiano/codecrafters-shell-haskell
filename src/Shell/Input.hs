@@ -3,6 +3,7 @@
 module Shell.Input (readInput) where
 
 import Data.List (isPrefixOf, sort)
+import System.Directory (listDirectory)
 import System.IO (
     BufferMode (NoBuffering),
     hFlush,
@@ -40,25 +41,30 @@ handleEvent _ (KeyChar c) st =
 handleEvent _ KeyBackspace st = case buffer st of
     [] -> Right (st, [])
     buf -> Right (st{buffer = init buf, tabCount = 0}, [Emit "\b \b"])
-handleEvent completions KeyTab st = handleTab completions st
+handleEvent completions KeyTab st =
+    let (pre, word) = splitBuffer (buffer st)
+     in handleTab pre word completions st
 
-handleTab :: [String] -> InputState -> Either String (InputState, [Action])
-handleTab completions st = complete (sort $ filter (text `isPrefixOf`) completions)
+splitBuffer :: String -> (String, String)
+splitBuffer buf = case break (== ' ') (reverse buf) of
+    (rword, rrest) -> (reverse rrest, reverse rword)
+
+handleTab :: String -> String -> [String] -> InputState -> Either String (InputState, [Action])
+handleTab pre word completions st = complete (sort $ filter (word `isPrefixOf`) completions)
   where
-    text = buffer st
     complete [match] =
-        let suffix = drop (length text) match ++ " "
-         in Right (st{buffer = match ++ " ", tabCount = 0}, [Emit suffix])
+        let suffix = drop (length word) match ++ " "
+         in Right (st{buffer = pre ++ match ++ " ", tabCount = 0}, [Emit suffix])
     complete ms@(_ : _ : _)
-        | length prefix > length text =
-            let suffix = drop (length text) prefix
-             in Right (st{buffer = prefix, tabCount = 0}, [Emit suffix])
+        | length pfx > length word =
+            let suffix = drop (length word) pfx
+             in Right (st{buffer = pre ++ pfx, tabCount = 0}, [Emit suffix])
         | tabCount st >= 1 =
-            Right (st{tabCount = 0}, [Emit $ "\n" ++ unwords' ms ++ "\n$ " ++ text])
+            Right (st{tabCount = 0}, [Emit $ "\n" ++ unwords' ms ++ "\n$ " ++ buffer st])
         | otherwise =
             Right (st{tabCount = 1}, [Bell])
       where
-        prefix = longestCommonPrefix ms
+        pfx = longestCommonPrefix ms
     complete _ = Right (st{tabCount = 0}, [Bell])
 
 longestCommonPrefix :: [String] -> String
@@ -95,12 +101,17 @@ readInput completions = do
     hSetEcho stdin False
     loop (InputState "" 0)
   where
+    proceed (Left result) = emit "\n" >> pure (Just result)
+    proceed (Right (st', actions)) = mapM_ runAction actions >> loop st'
+
     loop st = do
         c <- getChar
-        case handleEvent completions (charToEvent c) st of
-            Left result -> do
-                emit "\n"
-                pure (Just result)
-            Right (st', actions) -> do
-                mapM_ runAction actions
-                loop st'
+        case charToEvent c of
+            KeyTab -> do
+                let (pre, word) = splitBuffer (buffer st)
+                candidates <-
+                    if null pre
+                        then pure completions
+                        else listDirectory "."
+                proceed $ handleTab pre word candidates st
+            event -> proceed $ handleEvent completions event st
