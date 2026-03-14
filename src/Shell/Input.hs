@@ -6,7 +6,6 @@ import Data.List (isPrefixOf, sort)
 import System.IO (
     BufferMode (NoBuffering),
     hFlush,
-    hPutStr,
     hSetBuffering,
     hSetEcho,
     stdin,
@@ -79,7 +78,7 @@ unwords' (x : xs) = x ++ "  " ++ unwords' xs
 -- IO shell
 
 emit :: String -> IO ()
-emit s = hPutStr stdout s >> hFlush stdout
+emit s = putStr s >> hFlush stdout
 
 runAction :: Action -> IO ()
 runAction = \case
