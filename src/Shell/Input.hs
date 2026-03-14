@@ -42,28 +42,26 @@ handleEvent _ (KeyChar c) st =
 handleEvent _ KeyBackspace st = case buffer st of
     [] -> Right (st, [])
     buf -> Right (st{buffer = init buf, tabCount = 0}, [Emit "\b \b"])
-handleEvent completions KeyTab st =
-    let text = buffer st
-        matches = sort $ filter (text `isPrefixOf`) completions
-     in case matches of
-            [match] ->
-                let suffix = drop (length text) match ++ " "
-                 in Right (st{buffer = match ++ " ", tabCount = 0}, [Emit suffix])
-            (_ : _ : _) ->
-                let prefix = longestCommonPrefix matches
-                 in if length prefix > length text
-                        then
-                            let suffix = drop (length text) prefix
-                             in Right (st{buffer = prefix, tabCount = 0}, [Emit suffix])
-                        else
-                            if tabCount st >= 1
-                                then
-                                    Right
-                                        ( st{tabCount = 0}
-                                        , [Emit $ "\n" ++ unwords' matches ++ "\n$ " ++ text]
-                                        )
-                                else Right (st{tabCount = 1}, [Bell])
-            _ -> Right (st{tabCount = 0}, [Bell])
+handleEvent completions KeyTab st = handleTab completions st
+
+handleTab :: [String] -> InputState -> Either String (InputState, [Action])
+handleTab completions st = complete (sort $ filter (text `isPrefixOf`) completions)
+  where
+    text = buffer st
+    complete [match] =
+        let suffix = drop (length text) match ++ " "
+         in Right (st{buffer = match ++ " ", tabCount = 0}, [Emit suffix])
+    complete ms@(_ : _ : _)
+        | length prefix > length text =
+            let suffix = drop (length text) prefix
+             in Right (st{buffer = prefix, tabCount = 0}, [Emit suffix])
+        | tabCount st >= 1 =
+            Right (st{tabCount = 0}, [Emit $ "\n" ++ unwords' ms ++ "\n$ " ++ text])
+        | otherwise =
+            Right (st{tabCount = 1}, [Bell])
+      where
+        prefix = longestCommonPrefix ms
+    complete _ = Right (st{tabCount = 0}, [Bell])
 
 longestCommonPrefix :: [String] -> String
 longestCommonPrefix [] = ""
