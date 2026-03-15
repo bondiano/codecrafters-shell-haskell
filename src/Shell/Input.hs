@@ -143,7 +143,7 @@ handleTab pre word completions st = complete (sort $ filter (word `isPrefixOf`) 
                 newBuf = pre ++ pfx
              in Right (st{buffer = newBuf, cursorPos = length newBuf, tabCount = 0}, [Emit suffix])
         | tabCount st >= 1 =
-            let newEmit = "\n" ++ unwords' ms ++ "\n$ " ++ buffer st
+            let newEmit = "\r\n" ++ unwords' ms ++ "\r\n$ " ++ buffer st
              in Right (st{tabCount = 0}, [Emit newEmit])
         | otherwise =
             Right (st{tabCount = 1}, [Bell])
