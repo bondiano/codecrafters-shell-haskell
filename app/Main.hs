@@ -4,7 +4,6 @@ import Control.Monad (unless)
 import Control.Monad.Reader (asks, liftIO, runReaderT)
 import Data.List (nub)
 import Shell
-import System.Directory (listDirectory)
 import System.IO (hFlush, stdout)
 
 main :: IO ()
@@ -19,8 +18,7 @@ repl = do
     paths <- asks envPaths
     execNames <- liftIO $ getExecutableNames paths
     let cmdCompletions = nub $ builtinNames ++ execNames
-    fileCompletions <- liftIO $ listDirectory "."
-    result <- liftIO $ readInput cmdCompletions fileCompletions
+    result <- liftIO $ readInput cmdCompletions
     case result of
         Nothing -> pure ()
         Just input -> do
