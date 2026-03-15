@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Shell.Input (readInput) where
 
@@ -119,7 +120,7 @@ handleEvent _ KeyBackspace st
 handleEvent cmdCompletions KeyTab st =
     let (pre, word) = splitBuffer (buffer st)
      in if null pre
-            then toResult $ handleTab pre word cmdCompletions st
+            then toResult $ handleTab pre word (map (,False) cmdCompletions) st
             else NeedFileComplete st
 
 toResult :: Either String (InputState, [Action]) -> HandleResult
@@ -130,12 +131,13 @@ splitBuffer :: String -> (String, String)
 splitBuffer buf = case break (== ' ') (reverse buf) of
     (rword, rrest) -> (reverse rrest, reverse rword)
 
-handleTab :: String -> String -> [String] -> InputState -> Either String (InputState, [Action])
-handleTab pre word completions st = complete (sort $ filter (word `isPrefixOf`) completions)
+handleTab :: String -> String -> [(String, Bool)] -> InputState -> Either String (InputState, [Action])
+handleTab pre word completions st = complete (sort $ filter ((word `isPrefixOf`) . fst) completions)
   where
-    complete [match] =
-        let suffix = drop (length word) match ++ " "
-            newBuf = pre ++ match ++ " "
+    complete [(match, isDir)] =
+        let trail = if isDir then "/" else " "
+            suffix = drop (length word) match ++ trail
+            newBuf = pre ++ match ++ trail
          in Right (st{buffer = newBuf, cursorPos = length newBuf, tabCount = 0}, [Emit suffix])
     complete ms@(_ : _ : _)
         | length pfx > length word =
@@ -143,12 +145,12 @@ handleTab pre word completions st = complete (sort $ filter (word `isPrefixOf`) 
                 newBuf = pre ++ pfx
              in Right (st{buffer = newBuf, cursorPos = length newBuf, tabCount = 0}, [Emit suffix])
         | tabCount st >= 1 =
-            let newEmit = "\r\n" ++ unwords' ms ++ "\r\n$ " ++ buffer st
+            let newEmit = "\r\n" ++ unwords' (map fst ms) ++ "\r\n$ " ++ buffer st
              in Right (st{tabCount = 0}, [Emit newEmit])
         | otherwise =
             Right (st{tabCount = 1}, [Bell])
       where
-        pfx = longestCommonPrefix ms
+        pfx = longestCommonPrefix (map fst ms)
     complete _ = Right (st{tabCount = 0}, [Bell])
 
 longestCommonPrefix :: [String] -> String
@@ -165,18 +167,22 @@ unwords' [] = ""
 unwords' [x] = x
 unwords' (x : xs) = x ++ "  " ++ unwords' xs
 
--- | Get file completions for a word, supporting nested paths.
-getFileCompletions :: String -> IO [String]
+{- | Get file completions for a word, supporting nested paths.
+  Returns (name, isDirectory) pairs.
+-}
+getFileCompletions :: String -> IO [(String, Bool)]
 getFileCompletions word = case splitAtLastSlash word of
     Nothing -> do
         entries <- listDirectory "."
-        pure $ filter (word `isPrefixOf`) entries
+        let matched = filter (word `isPrefixOf`) entries
+        mapM (\e -> (e,) <$> doesDirectoryExist e) matched
     Just (dirPath, prefix) -> do
         exists <- doesDirectoryExist dirPath
         if exists
             then do
                 entries <- listDirectory dirPath
-                pure $ map (dirPath ++) $ filter (prefix `isPrefixOf`) entries
+                let matched = filter (prefix `isPrefixOf`) entries
+                mapM (\e -> (dirPath ++ e,) <$> doesDirectoryExist (dirPath ++ e)) matched
             else pure []
   where
     splitAtLastSlash s = case break (== '/') (reverse s) of
