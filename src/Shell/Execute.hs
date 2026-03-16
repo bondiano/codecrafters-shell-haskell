@@ -1,5 +1,6 @@
 module Shell.Execute (
     execute,
+    executePipeline,
 ) where
 
 import Control.Exception (IOException, finally, try)
@@ -13,7 +14,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), StdStream (..), createProcess, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createProcess, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -84,6 +85,37 @@ resolveHomeDir homeDirectory path = case path of
     "~/" -> homeDirectory
     '~' : rest -> homeDirectory </> rest
     _ -> path
+
+executePipeline :: [Command] -> Shell ()
+executePipeline [] = pure ()
+executePipeline [cmd] = execute cmd
+executePipeline cmds = liftIO $ do
+    phs <- launchChain Nothing cmds
+    mapM_ waitForProcess phs
+
+launchChain :: Maybe Handle -> [Command] -> IO [ProcessHandle]
+launchChain _ [] = pure []
+launchChain mIn [cmd] = case body cmd of
+    External c as -> do
+        outH <- openRedirect stdout (stdoutRedirect cmd)
+        errH <- openRedirect stderr (stderrRedirect cmd)
+        let p = (proc c as){std_in = maybe Inherit UseHandle mIn, std_out = UseHandle outH, std_err = UseHandle errH}
+        (_, _, _, ph) <- createProcess p
+        mapM_ hClose mIn
+        pure [ph]
+    _ -> do
+        mapM_ hClose mIn
+        pure []
+launchChain mIn (cmd : rest) = case body cmd of
+    External c as -> do
+        errH <- openRedirect stderr (stderrRedirect cmd)
+        let p = (proc c as){std_in = maybe Inherit UseHandle mIn, std_out = CreatePipe, std_err = UseHandle errH}
+        (_, mPipe, _, ph) <- createProcess p
+        mapM_ hClose mIn
+        pipeOut <- maybe (fail "expected pipe handle") pure mPipe
+        phs <- launchChain (Just pipeOut) rest
+        pure (ph : phs)
+    _ -> launchChain mIn rest
 
 toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess

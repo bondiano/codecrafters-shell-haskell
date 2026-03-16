@@ -24,5 +24,5 @@ repl = do
     case result of
         Nothing -> pure ()
         Just input -> do
-            unless (null input) $ execute (parseCommand input)
+            unless (null input) $ executePipeline (parsePipeline input)
             repl

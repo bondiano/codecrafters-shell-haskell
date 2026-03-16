@@ -7,6 +7,7 @@ module Shell.Parser (
     builtinName,
     builtinNames,
     parseCommand,
+    parsePipeline,
     parseArgs,
 ) where
 
@@ -111,6 +112,22 @@ parseCommand input =
             (cmd : args) -> External cmd args
             [] -> Empty
      in Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR}
+
+parsePipeline :: String -> [Command]
+parsePipeline = map parseCommand . splitPipeline
+
+splitPipeline :: String -> [String]
+splitPipeline = go Unquoted "" []
+  where
+    go _ cur acc [] = reverse (reverse cur : acc)
+    go Unquoted cur acc ('|' : rest) = go Unquoted "" (reverse cur : acc) rest
+    go Unquoted cur acc ('\'' : rest) = go InSingle ('\'' : cur) acc rest
+    go Unquoted cur acc ('"' : rest) = go InDouble ('"' : cur) acc rest
+    go Unquoted cur acc ('\\' : c : rest) = go Unquoted (c : '\\' : cur) acc rest
+    go InSingle cur acc ('\'' : rest) = go Unquoted ('\'' : cur) acc rest
+    go InDouble cur acc ('"' : rest) = go Unquoted ('"' : cur) acc rest
+    go InDouble cur acc ('\\' : c : rest) = go InDouble (c : '\\' : cur) acc rest
+    go qs cur acc (c : rest) = go qs (c : cur) acc rest
 
 parseExitCode :: [String] -> Int
 parseExitCode [] = 0
