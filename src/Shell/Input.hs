@@ -145,7 +145,8 @@ handleTab pre word completions st = complete (sort $ filter ((word `isPrefixOf`)
                 newBuf = pre ++ pfx
              in Right (st{buffer = newBuf, cursorPos = length newBuf, tabCount = 0}, [Emit suffix])
         | tabCount st >= 1 =
-            let newEmit = "\r\n" ++ unwords' (map fst ms) ++ "\r\n$ " ++ buffer st
+            let display = map (\(name, isDir) -> if isDir then name ++ "/" else name) ms
+                newEmit = "\r\n" ++ unwords' display ++ "\r\n$ " ++ buffer st
              in Right (st{tabCount = 0}, [Emit newEmit])
         | otherwise =
             Right (st{tabCount = 1}, [Bell])
