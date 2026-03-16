@@ -4,10 +4,12 @@ import Control.Monad (unless)
 import Control.Monad.Reader (asks, liftIO, runReaderT)
 import Data.List (nub)
 import Shell
-import System.IO (hFlush, stdout)
+import System.IO (BufferMode (NoBuffering), hFlush, hSetBuffering, hSetEcho, stdin, stdout)
 
 main :: IO ()
 main = do
+    hSetBuffering stdin NoBuffering
+    hSetEcho stdin False
     env <- buildEnv
     runReaderT (runShell repl) env
 

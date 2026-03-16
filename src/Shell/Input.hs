@@ -6,11 +6,7 @@ module Shell.Input (readInput) where
 import Data.List (isPrefixOf, sort)
 import System.Directory (doesDirectoryExist, listDirectory)
 import System.IO (
-    BufferMode (NoBuffering),
     hFlush,
-    hSetBuffering,
-    hSetEcho,
-    stdin,
     stdout,
  )
 
@@ -205,10 +201,7 @@ Sets terminal to raw mode (no buffering, no echo), reads each char manually,
 and restores nothing — raw mode stays on for the whole session.
 -}
 readInput :: [String] -> IO (Maybe String)
-readInput cmdCompletions = do
-    hSetBuffering stdin NoBuffering
-    hSetEcho stdin False
-    loop (InputState "" 0 0)
+readInput cmdCompletions = loop (InputState "" 0 0)
   where
     loop st = do
         evt <- readEvent
