@@ -47,6 +47,7 @@ executeBody _ _ (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 executeBody h _ (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
 executeBody h _ (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h
 executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
+executeBody _ _ (BuiltinCmd History) = return ()
 executeBody _ eh (BuiltinCmd (CD Nothing)) = liftIO $ hPutStrLn eh "cd: missing arguments"
 executeBody _ eh (BuiltinCmd (CD (Just cdDir))) = do
     Env{homeDir = homeDirectory} <- ask
