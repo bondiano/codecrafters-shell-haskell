@@ -20,7 +20,8 @@ repl = do
     paths <- asks envPaths
     execNames <- liftIO $ getExecutableNames paths
     let cmdCompletions = nub $ builtinNames ++ execNames
-    result <- liftIO $ readInput cmdCompletions
+    hist <- getHistory
+    result <- liftIO $ readInput cmdCompletions hist
     case result of
         Nothing -> pure ()
         Just input -> do

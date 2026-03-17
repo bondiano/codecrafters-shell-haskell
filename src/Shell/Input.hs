@@ -12,12 +12,15 @@ import System.IO (
 
 -- Types
 
-data InputEvent = KeyChar Char | KeyBackspace | KeyTab | KeyEnter | KeyLeft | KeyRight | KeyIgnored | KeyEscape
+data InputEvent = KeyChar Char | KeyBackspace | KeyTab | KeyEnter | KeyLeft | KeyRight | KeyUp | KeyDown | KeyIgnored | KeyEscape
 
 data InputState = InputState
     { buffer :: String -- normal order (not reversed)
     , cursorPos :: !Int -- 0-based cursor position within buffer
     , tabCount :: !Int
+    , historyEntries :: [String] -- history list
+    , historyIdx :: !Int -- index into history; length = new input
+    , savedInput :: String -- saved current input when browsing history
     }
 
 data Action = Emit String | Bell
@@ -50,6 +53,21 @@ rewriteTail tailStr clearExtra =
     let total = length tailStr + clearExtra
      in tailStr ++ replicate clearExtra ' ' ++ cursorLeft total
 
+-- | Build ANSI output to replace the current line with a new buffer
+replaceLineOutput :: InputState -> String -> String
+replaceLineOutput st newBuf =
+    let oldLen = length (buffer st)
+        pos = cursorPos st
+        moveToStart = cursorLeft pos
+        clearAndWrite = newBuf ++ replicate (max 0 (oldLen - length newBuf)) ' '
+        moveBack = cursorLeft (max 0 (oldLen - length newBuf))
+     in moveToStart ++ clearAndWrite ++ moveBack
+
+-- | Update state with a new buffer from history navigation
+replaceLine :: InputState -> String -> Int -> InputState
+replaceLine st newBuf newIdx =
+    st{buffer = newBuf, cursorPos = length newBuf, historyIdx = newIdx, tabCount = 0}
+
 -- Pure logic
 
 -- | Read a single input event, consuming multi-byte escape sequences.
@@ -79,8 +97,8 @@ resolveEscape = do
 
 csiEvent :: Char -> InputEvent
 csiEvent = \case
-    'A' -> KeyIgnored -- Up
-    'B' -> KeyIgnored -- Down
+    'A' -> KeyUp
+    'B' -> KeyDown
     'C' -> KeyRight
     'D' -> KeyLeft
     _ -> KeyIgnored
@@ -96,6 +114,25 @@ handleEvent _ KeyLeft st
 handleEvent _ KeyRight st
     | cursorPos st < length (buffer st) =
         Continue (st{cursorPos = cursorPos st + 1}) [Emit (cursorRight 1)]
+    | otherwise = Continue st []
+handleEvent _ KeyUp st
+    | historyIdx st > 0 =
+        let newIdx = historyIdx st - 1
+            newBuf = historyEntries st !! newIdx
+            st' =
+                if historyIdx st == length (historyEntries st)
+                    then st{savedInput = buffer st}
+                    else st
+         in Continue (replaceLine st' newBuf newIdx) [Emit (replaceLineOutput st newBuf)]
+    | otherwise = Continue st []
+handleEvent _ KeyDown st
+    | historyIdx st < length (historyEntries st) =
+        let newIdx = historyIdx st + 1
+            newBuf =
+                if newIdx == length (historyEntries st)
+                    then savedInput st
+                    else historyEntries st !! newIdx
+         in Continue (replaceLine st newBuf newIdx) [Emit (replaceLineOutput st newBuf)]
     | otherwise = Continue st []
 handleEvent _ (KeyChar c) st =
     let pos = cursorPos st
@@ -200,8 +237,8 @@ runAction = \case
 Sets terminal to raw mode (no buffering, no echo), reads each char manually,
 and restores nothing — raw mode stays on for the whole session.
 -}
-readInput :: [String] -> IO (Maybe String)
-readInput cmdCompletions = loop (InputState "" 0 0)
+readInput :: [String] -> [String] -> IO (Maybe String)
+readInput cmdCompletions history = loop (InputState "" 0 0 history (length history) "")
   where
     loop st = do
         evt <- readEvent
