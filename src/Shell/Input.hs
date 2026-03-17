@@ -57,11 +57,9 @@ rewriteTail tailStr clearExtra =
 replaceLineOutput :: InputState -> String -> String
 replaceLineOutput st newBuf =
     let oldLen = length (buffer st)
-        pos = cursorPos st
-        moveToStart = cursorLeft pos
-        clearAndWrite = newBuf ++ replicate (max 0 (oldLen - length newBuf)) ' '
+        padding = replicate (max 0 (oldLen - length newBuf)) ' '
         moveBack = cursorLeft (max 0 (oldLen - length newBuf))
-     in moveToStart ++ clearAndWrite ++ moveBack
+     in "\r\ESC[K$ " ++ newBuf ++ padding ++ moveBack
 
 -- | Update state with a new buffer from history navigation
 replaceLine :: InputState -> String -> Int -> InputState
