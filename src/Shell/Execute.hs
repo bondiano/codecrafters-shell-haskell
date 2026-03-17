@@ -50,6 +50,9 @@ executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
 executeBody _ _ (BuiltinCmd (History (ReadHistory path))) = do
     content <- liftIO $ readFile path
     mapM_ addHistory $ filter (not . null) $ lines content
+executeBody _ _ (BuiltinCmd (History (WriteHistory path))) = do
+    entries <- getHistory
+    liftIO $ writeFile path $ unlines entries
 executeBody h _ (BuiltinCmd (History (ShowHistory mCount))) = do
     entries <- getHistory
     let numbered = zip [1 :: Int ..] entries
