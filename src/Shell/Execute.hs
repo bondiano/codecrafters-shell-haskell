@@ -3,8 +3,7 @@ module Shell.Execute (
     executePipeline,
 ) where
 
-import Control.Concurrent (MVar, forkIO, newEmptyMVar, putMVar, takeMVar)
-import Control.Exception (IOException, finally, try)
+import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
 import Shell.Env (Env (..), Shell (..))
@@ -87,22 +86,16 @@ resolveHomeDir homeDirectory path = case path of
     '~' : rest -> homeDirectory </> rest
     _ -> path
 
-data Waitable = WaitProcess ProcessHandle | WaitThread (MVar ())
-
-waitFor :: Waitable -> IO ()
-waitFor (WaitProcess ph) = void $ waitForProcess ph
-waitFor (WaitThread mv) = takeMVar mv
-
 executePipeline :: [Command] -> Shell ()
 executePipeline [] = pure ()
 executePipeline [cmd] = execute cmd
 executePipeline cmds = do
     env <- ask
     liftIO $ do
-        ws <- launchChain env Nothing cmds
-        mapM_ waitFor ws
+        phs <- launchChain env Nothing cmds
+        mapM_ waitForProcess phs
 
-launchChain :: Env -> Maybe Handle -> [Command] -> IO [Waitable]
+launchChain :: Env -> Maybe Handle -> [Command] -> IO [ProcessHandle]
 launchChain _ _ [] = pure []
 -- Last command in pipeline
 launchChain env mIn [cmd] = case body cmd of
@@ -112,14 +105,15 @@ launchChain env mIn [cmd] = case body cmd of
         let p = (proc c as){std_in = maybe Inherit UseHandle mIn, std_out = UseHandle outH, std_err = UseHandle errH}
         (_, _, _, ph) <- createProcess p
         mapM_ hClose mIn
-        pure [WaitProcess ph]
+        pure [ph]
     cmdBody -> do
         outH <- openRedirect stdout (stdoutRedirect cmd)
         errH <- openRedirect stderr (stderrRedirect cmd)
-        let toClose = [outH | Just _ <- [stdoutRedirect cmd]] ++ [errH | Just _ <- [stderrRedirect cmd]]
-        w <- forkBuiltin env cmdBody outH errH toClose
+        runReaderT (runShell $ executeBody outH errH cmdBody) env
+        closeRedirect (stdoutRedirect cmd) outH
+        closeRedirect (stderrRedirect cmd) errH
         mapM_ hClose mIn
-        pure [w]
+        pure []
 -- Non-last command in pipeline
 launchChain env mIn (cmd : rest) = case body cmd of
     External c as -> do
@@ -128,27 +122,16 @@ launchChain env mIn (cmd : rest) = case body cmd of
         (_, mPipe, _, ph) <- createProcess p
         mapM_ hClose mIn
         pipeOut <- maybe (fail "expected pipe handle") pure mPipe
-        ws <- launchChain env (Just pipeOut) rest
-        pure (WaitProcess ph : ws)
+        phs <- launchChain env (Just pipeOut) rest
+        pure (ph : phs)
     cmdBody -> do
         (pipeRead, pipeWrite) <- createPipe
         errH <- openRedirect stderr (stderrRedirect cmd)
-        let toClose = pipeWrite : [errH | Just _ <- [stderrRedirect cmd]]
-        w <- forkBuiltin env cmdBody pipeWrite errH toClose
+        runReaderT (runShell $ executeBody pipeWrite errH cmdBody) env
+        hClose pipeWrite
+        closeRedirect (stderrRedirect cmd) errH
         mapM_ hClose mIn
-        ws <- launchChain env (Just pipeRead) rest
-        pure (w : ws)
-
-forkBuiltin :: Env -> CommandBody -> Handle -> Handle -> [Handle] -> IO Waitable
-forkBuiltin env cmdBody outH errH toClose = do
-    done <- newEmptyMVar
-    _ <-
-        forkIO $
-            runReaderT (runShell $ executeBody outH errH cmdBody) env
-                `finally` do
-                    mapM_ hClose toClose
-                    putMVar done ()
-    pure (WaitThread done)
+        launchChain env (Just pipeRead) rest
 
 toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
