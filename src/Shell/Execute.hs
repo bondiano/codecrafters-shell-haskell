@@ -6,7 +6,7 @@ module Shell.Execute (
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved)
+import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved, saveHistory)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -43,7 +43,7 @@ closeRedirect (Just _) h = hClose h
 executeBody :: Handle -> Handle -> CommandBody -> Shell ()
 executeBody _ _ Empty = return ()
 executeBody _ _ (BuiltinCmd (Type "")) = return ()
-executeBody _ _ (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
+executeBody _ _ (BuiltinCmd (Exit code)) = saveHistory >> liftIO (exitWith $ toExitCode code)
 executeBody h _ (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
 executeBody h _ (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h
 executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h

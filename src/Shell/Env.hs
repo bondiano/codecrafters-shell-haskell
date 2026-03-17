@@ -8,6 +8,7 @@ module Shell.Env (
     getHistory,
     getUnsavedHistory,
     markHistorySaved,
+    saveHistory,
 ) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -17,7 +18,7 @@ import System.Directory (doesFileExist, getHomeDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (splitSearchPath)
 
-data Env = Env {envPaths :: [FilePath], homeDir :: FilePath, historyRef :: IORef [String], lastSavedRef :: IORef Int}
+data Env = Env {envPaths :: [FilePath], homeDir :: FilePath, historyRef :: IORef [String], lastSavedRef :: IORef Int, histFile :: Maybe FilePath}
 
 newtype Shell a = Shell {runShell :: ReaderT Env IO a}
     deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env)
@@ -36,7 +37,7 @@ buildEnv = do
         Nothing -> pure []
     hist <- newIORef initialHist
     saved <- newIORef (length initialHist)
-    return Env{envPaths = paths, homeDir = home, historyRef = hist, lastSavedRef = saved}
+    return Env{envPaths = paths, homeDir = home, historyRef = hist, lastSavedRef = saved, histFile = histFile}
 
 addHistory :: String -> Shell ()
 addHistory entry = do
@@ -57,6 +58,15 @@ markHistorySaved = do
     entries <- getHistory
     ref <- asks lastSavedRef
     liftIO $ writeIORef ref (length entries)
+
+saveHistory :: Shell ()
+saveHistory = do
+    mPath <- asks histFile
+    case mPath of
+        Nothing -> pure ()
+        Just path -> do
+            entries <- getHistory
+            liftIO $ writeFile path (unlines entries)
 
 buildEnvPath :: IO [FilePath]
 buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"
