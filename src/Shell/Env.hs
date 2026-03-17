@@ -6,16 +6,18 @@ module Shell.Env (
     buildEnv,
     addHistory,
     getHistory,
+    getUnsavedHistory,
+    markHistorySaved,
 ) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (MonadReader, ReaderT (..), asks)
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import System.Directory (getHomeDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (splitSearchPath)
 
-data Env = Env {envPaths :: [FilePath], homeDir :: FilePath, historyRef :: IORef [String]}
+data Env = Env {envPaths :: [FilePath], homeDir :: FilePath, historyRef :: IORef [String], lastSavedRef :: IORef Int}
 
 newtype Shell a = Shell {runShell :: ReaderT Env IO a}
     deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env)
@@ -25,7 +27,8 @@ buildEnv = do
     paths <- buildEnvPath
     home <- getHomeDirectory
     hist <- newIORef []
-    return Env{envPaths = paths, homeDir = home, historyRef = hist}
+    saved <- newIORef 0
+    return Env{envPaths = paths, homeDir = home, historyRef = hist, lastSavedRef = saved}
 
 addHistory :: String -> Shell ()
 addHistory entry = do
@@ -34,6 +37,18 @@ addHistory entry = do
 
 getHistory :: Shell [String]
 getHistory = asks historyRef >>= liftIO . readIORef
+
+getUnsavedHistory :: Shell [String]
+getUnsavedHistory = do
+    entries <- getHistory
+    savedIdx <- asks lastSavedRef >>= liftIO . readIORef
+    pure $ drop savedIdx entries
+
+markHistorySaved :: Shell ()
+markHistorySaved = do
+    entries <- getHistory
+    ref <- asks lastSavedRef
+    liftIO $ writeIORef ref (length entries)
 
 buildEnvPath :: IO [FilePath]
 buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"

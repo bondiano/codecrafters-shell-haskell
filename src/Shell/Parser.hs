@@ -15,7 +15,7 @@ module Shell.Parser (
 import Data.Maybe (fromMaybe, listToMaybe)
 import Text.Read (readMaybe)
 
-data HistoryAction = ShowHistory (Maybe Int) | ReadHistory FilePath | WriteHistory FilePath
+data HistoryAction = ShowHistory (Maybe Int) | ReadHistory FilePath | WriteHistory FilePath | AppendHistory FilePath
 
 data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath) | History HistoryAction
 
@@ -115,6 +115,7 @@ parseCommand input =
             ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
             ("history" : "-r" : path : _) -> BuiltinCmd $ History (ReadHistory path)
             ("history" : "-w" : path : _) -> BuiltinCmd $ History (WriteHistory path)
+            ("history" : "-a" : path : _) -> BuiltinCmd $ History (AppendHistory path)
             ("history" : args) -> BuiltinCmd $ History (ShowHistory (listToMaybe args >>= readMaybe))
             (cmd : args) -> External cmd args
             [] -> Empty

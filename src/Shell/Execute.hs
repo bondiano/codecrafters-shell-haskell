@@ -6,7 +6,7 @@ module Shell.Execute (
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), addHistory, getHistory)
+import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -50,9 +50,14 @@ executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
 executeBody _ _ (BuiltinCmd (History (ReadHistory path))) = do
     content <- liftIO $ readFile path
     mapM_ addHistory $ filter (not . null) $ lines content
+    markHistorySaved
 executeBody _ _ (BuiltinCmd (History (WriteHistory path))) = do
     entries <- getHistory
     liftIO $ writeFile path $ unlines entries
+executeBody _ _ (BuiltinCmd (History (AppendHistory path))) = do
+    unsaved <- getUnsavedHistory
+    liftIO $ appendFile path $ unlines unsaved
+    markHistorySaved
 executeBody h _ (BuiltinCmd (History (ShowHistory mCount))) = do
     entries <- getHistory
     let numbered = zip [1 :: Int ..] entries
