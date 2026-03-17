@@ -47,9 +47,11 @@ executeBody _ _ (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 executeBody h _ (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
 executeBody h _ (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h
 executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
-executeBody h _ (BuiltinCmd History) = do
+executeBody h _ (BuiltinCmd (History mCount)) = do
     entries <- getHistory
-    let formatted = zipWith (\i cmd -> "    " ++ show i ++ "  " ++ cmd) [1 :: Int ..] entries
+    let numbered = zip [1 :: Int ..] entries
+        visible = maybe numbered (\n -> drop (length numbered - n) numbered) mCount
+        formatted = map (\(i, cmd) -> "    " ++ show i ++ "  " ++ cmd) visible
     liftIO $ mapM_ (hPutStrLn h) formatted
 executeBody _ eh (BuiltinCmd (CD Nothing)) = liftIO $ hPutStrLn eh "cd: missing arguments"
 executeBody _ eh (BuiltinCmd (CD (Just cdDir))) = do

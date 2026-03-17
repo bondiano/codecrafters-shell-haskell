@@ -11,10 +11,10 @@ module Shell.Parser (
     parseArgs,
 ) where
 
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Text.Read (readMaybe)
 
-data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath) | History
+data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath) | History (Maybe Int)
 
 data RedirectMode = Overwrite | Append deriving (Eq, Show)
 data Redirect = Redirect {target :: FilePath, mode :: RedirectMode} deriving (Eq, Show)
@@ -28,7 +28,7 @@ builtinName (Echo _) = "echo"
 builtinName (Type _) = "type"
 builtinName PWD = "pwd"
 builtinName (CD _) = "cd"
-builtinName History = "history"
+builtinName (History _) = "history"
 
 builtinNames :: [String]
 builtinNames = ["echo", "exit", "type", "pwd", "cd", "history"]
@@ -110,7 +110,7 @@ parseCommand input =
             ("pwd" : _) -> BuiltinCmd PWD
             ["cd"] -> BuiltinCmd $ CD Nothing
             ("cd" : args) -> BuiltinCmd $ CD $ Just $ unwords args
-            ("history" : _) -> BuiltinCmd History
+            ("history" : args) -> BuiltinCmd $ History (listToMaybe args >>= readMaybe)
             (cmd : args) -> External cmd args
             [] -> Empty
      in Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR}
