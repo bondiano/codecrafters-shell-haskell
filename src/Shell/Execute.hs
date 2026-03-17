@@ -3,10 +3,11 @@ module Shell.Execute (
     executePipeline,
 ) where
 
+import Control.Concurrent (MVar, forkIO, newEmptyMVar, putMVar, takeMVar)
 import Control.Exception (IOException, finally, try)
 import Control.Monad (void)
-import Control.Monad.Reader (ask, asks, liftIO)
-import Shell.Env (Env (..), Shell)
+import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
+import Shell.Env (Env (..), Shell (..))
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -14,7 +15,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createProcess, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -86,36 +87,68 @@ resolveHomeDir homeDirectory path = case path of
     '~' : rest -> homeDirectory </> rest
     _ -> path
 
+data Waitable = WaitProcess ProcessHandle | WaitThread (MVar ())
+
+waitFor :: Waitable -> IO ()
+waitFor (WaitProcess ph) = void $ waitForProcess ph
+waitFor (WaitThread mv) = takeMVar mv
+
 executePipeline :: [Command] -> Shell ()
 executePipeline [] = pure ()
 executePipeline [cmd] = execute cmd
-executePipeline cmds = liftIO $ do
-    phs <- launchChain Nothing cmds
-    mapM_ waitForProcess phs
+executePipeline cmds = do
+    env <- ask
+    liftIO $ do
+        ws <- launchChain env Nothing cmds
+        mapM_ waitFor ws
 
-launchChain :: Maybe Handle -> [Command] -> IO [ProcessHandle]
-launchChain _ [] = pure []
-launchChain mIn [cmd] = case body cmd of
+launchChain :: Env -> Maybe Handle -> [Command] -> IO [Waitable]
+launchChain _ _ [] = pure []
+-- Last command in pipeline
+launchChain env mIn [cmd] = case body cmd of
     External c as -> do
         outH <- openRedirect stdout (stdoutRedirect cmd)
         errH <- openRedirect stderr (stderrRedirect cmd)
         let p = (proc c as){std_in = maybe Inherit UseHandle mIn, std_out = UseHandle outH, std_err = UseHandle errH}
         (_, _, _, ph) <- createProcess p
         mapM_ hClose mIn
-        pure [ph]
-    _ -> do
+        pure [WaitProcess ph]
+    cmdBody -> do
+        outH <- openRedirect stdout (stdoutRedirect cmd)
+        errH <- openRedirect stderr (stderrRedirect cmd)
+        let toClose = [outH | Just _ <- [stdoutRedirect cmd]] ++ [errH | Just _ <- [stderrRedirect cmd]]
+        w <- forkBuiltin env cmdBody outH errH toClose
         mapM_ hClose mIn
-        pure []
-launchChain mIn (cmd : rest) = case body cmd of
+        pure [w]
+-- Non-last command in pipeline
+launchChain env mIn (cmd : rest) = case body cmd of
     External c as -> do
         errH <- openRedirect stderr (stderrRedirect cmd)
         let p = (proc c as){std_in = maybe Inherit UseHandle mIn, std_out = CreatePipe, std_err = UseHandle errH}
         (_, mPipe, _, ph) <- createProcess p
         mapM_ hClose mIn
         pipeOut <- maybe (fail "expected pipe handle") pure mPipe
-        phs <- launchChain (Just pipeOut) rest
-        pure (ph : phs)
-    _ -> launchChain mIn rest
+        ws <- launchChain env (Just pipeOut) rest
+        pure (WaitProcess ph : ws)
+    cmdBody -> do
+        (pipeRead, pipeWrite) <- createPipe
+        errH <- openRedirect stderr (stderrRedirect cmd)
+        let toClose = pipeWrite : [errH | Just _ <- [stderrRedirect cmd]]
+        w <- forkBuiltin env cmdBody pipeWrite errH toClose
+        mapM_ hClose mIn
+        ws <- launchChain env (Just pipeRead) rest
+        pure (w : ws)
+
+forkBuiltin :: Env -> CommandBody -> Handle -> Handle -> [Handle] -> IO Waitable
+forkBuiltin env cmdBody outH errH toClose = do
+    done <- newEmptyMVar
+    _ <-
+        forkIO $
+            runReaderT (runShell $ executeBody outH errH cmdBody) env
+                `finally` do
+                    mapM_ hClose toClose
+                    putMVar done ()
+    pure (WaitThread done)
 
 toExitCode :: Int -> ExitCode
 toExitCode 0 = ExitSuccess
