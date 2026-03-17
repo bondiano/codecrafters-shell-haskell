@@ -6,8 +6,8 @@ module Shell.Execute (
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), getHistory)
-import Shell.Parser (Builtin (..), Command (..), CommandBody (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
+import Shell.Env (Env (..), Shell (..), addHistory, getHistory)
+import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
@@ -47,7 +47,10 @@ executeBody _ _ (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 executeBody h _ (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
 executeBody h _ (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h
 executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
-executeBody h _ (BuiltinCmd (History mCount)) = do
+executeBody _ _ (BuiltinCmd (History (ReadHistory path))) = do
+    content <- liftIO $ readFile path
+    mapM_ addHistory $ filter (not . null) $ lines content
+executeBody h _ (BuiltinCmd (History (ShowHistory mCount))) = do
     entries <- getHistory
     let numbered = zip [1 :: Int ..] entries
         visible = maybe numbered (\n -> drop (length numbered - n) numbered) mCount
