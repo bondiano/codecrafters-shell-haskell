@@ -13,7 +13,7 @@ module Shell.Env (
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (MonadReader, ReaderT (..), asks)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
-import System.Directory (getHomeDirectory)
+import System.Directory (doesFileExist, getHomeDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (splitSearchPath)
 
@@ -26,8 +26,16 @@ buildEnv :: IO Env
 buildEnv = do
     paths <- buildEnvPath
     home <- getHomeDirectory
-    hist <- newIORef []
-    saved <- newIORef 0
+    histFile <- lookupEnv "HISTFILE"
+    initialHist <- case histFile of
+        Just path -> do
+            exists <- doesFileExist path
+            if exists
+                then filter (not . null) . lines <$> readFile path
+                else pure []
+        Nothing -> pure []
+    hist <- newIORef initialHist
+    saved <- newIORef (length initialHist)
     return Env{envPaths = paths, homeDir = home, historyRef = hist, lastSavedRef = saved}
 
 addHistory :: String -> Shell ()
