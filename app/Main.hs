@@ -24,5 +24,7 @@ repl = do
     case result of
         Nothing -> pure ()
         Just input -> do
-            unless (null input) $ executePipeline (parsePipeline input)
+            unless (null input) $ do
+                addHistory input
+                executePipeline (parsePipeline input)
             repl

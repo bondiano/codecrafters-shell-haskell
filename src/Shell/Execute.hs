@@ -6,7 +6,7 @@ module Shell.Execute (
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..))
+import Shell.Env (Env (..), Shell (..), getHistory)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -47,7 +47,10 @@ executeBody _ _ (BuiltinCmd (Exit code)) = liftIO $ exitWith $ toExitCode code
 executeBody h _ (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
 executeBody h _ (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h
 executeBody h _ (BuiltinCmd PWD) = liftIO $ getCurrentDirectory >>= hPutStrLn h
-executeBody _ _ (BuiltinCmd History) = return ()
+executeBody h _ (BuiltinCmd History) = do
+    entries <- getHistory
+    let formatted = zipWith (\i cmd -> "    " ++ show i ++ "  " ++ cmd) [1 :: Int ..] entries
+    liftIO $ mapM_ (hPutStrLn h) formatted
 executeBody _ eh (BuiltinCmd (CD Nothing)) = liftIO $ hPutStrLn eh "cd: missing arguments"
 executeBody _ eh (BuiltinCmd (CD (Just cdDir))) = do
     Env{homeDir = homeDirectory} <- ask
