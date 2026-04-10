@@ -31,7 +31,7 @@ executeBackground Command{body = External cmd args} = do
     jobNum <- nextJobNumber
     let cmdLine = unwords (cmd : args)
     -- Use sh's native & to background the process, capture PID via $!
-    pidStr <- liftIO $ readCreateProcess (proc "/bin/sh" ["-c", cmdLine ++ " & echo $!"]){std_err = Inherit} ""
+    pidStr <- liftIO $ readCreateProcess (proc "/bin/sh" ["-c", cmdLine ++ " </dev/null >/dev/null 2>&1 & echo $!"]){std_err = Inherit} ""
     let pidLine = filter (/= '\n') pidStr
     liftIO $ do
         putStrLn $ "[" ++ show jobNum ++ "] " ++ pidLine
