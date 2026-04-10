@@ -16,7 +16,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, spawnProcess, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, shell, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -29,7 +29,8 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit}
+    let cmdLine = unwords (cmd : map escapeShellArg args)
+        p = (shell cmdLine){std_in = Inherit, std_out = Inherit, std_err = Inherit}
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e
@@ -46,6 +47,14 @@ executeBackground Command{body = External cmd args} = do
                 Nothing -> pure ()
             liftIO $ void $ forkIO $ void $ waitForProcess ph
 executeBackground cmd = execute cmd
+
+escapeShellArg :: String -> String
+escapeShellArg s
+    | any (`elem` s) (" \t\n\\\"'$`!#&|;(){}[]<>?*~" :: String) = "'" ++ concatMap esc s ++ "'"
+    | otherwise = s
+  where
+    esc '\'' = "'\\''"
+    esc c = [c]
 
 finally' :: Shell a -> Shell b -> Shell a
 finally' action cleanup = do
