@@ -10,6 +10,7 @@ module Shell.Env (
     markHistorySaved,
     saveHistory,
     nextJobNumber,
+    addBackgroundJob,
 ) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -18,8 +19,9 @@ import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import System.Directory (doesFileExist, getHomeDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (splitSearchPath)
+import System.Process (ProcessHandle)
 
-data Env = Env {envPaths :: [FilePath], homeDir :: FilePath, historyRef :: IORef [String], lastSavedRef :: IORef Int, histFile :: Maybe FilePath, jobCounter :: IORef Int}
+data Env = Env {envPaths :: [FilePath], homeDir :: FilePath, historyRef :: IORef [String], lastSavedRef :: IORef Int, histFile :: Maybe FilePath, jobCounter :: IORef Int, bgJobs :: IORef [(Int, ProcessHandle)]}
 
 newtype Shell a = Shell {runShell :: ReaderT Env IO a}
     deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env)
@@ -39,7 +41,8 @@ buildEnv = do
     hist <- newIORef initialHist
     saved <- newIORef (length initialHist)
     jobs <- newIORef 0
-    return Env{envPaths = paths, homeDir = home, historyRef = hist, lastSavedRef = saved, histFile = histFile, jobCounter = jobs}
+    bgJobsRef <- newIORef []
+    return Env{envPaths = paths, homeDir = home, historyRef = hist, lastSavedRef = saved, histFile = histFile, jobCounter = jobs, bgJobs = bgJobsRef}
 
 addHistory :: String -> Shell ()
 addHistory entry = do
@@ -75,6 +78,11 @@ nextJobNumber = do
     ref <- asks jobCounter
     liftIO $ modifyIORef' ref (+ 1)
     liftIO $ readIORef ref
+
+addBackgroundJob :: Int -> ProcessHandle -> Shell ()
+addBackgroundJob jobNum ph = do
+    ref <- asks bgJobs
+    liftIO $ modifyIORef' ref ((jobNum, ph) :)
 
 buildEnvPath :: IO [FilePath]
 buildEnvPath = maybe [] splitSearchPath <$> lookupEnv "PATH"

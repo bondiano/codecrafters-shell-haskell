@@ -7,7 +7,7 @@ module Shell.Execute (
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
+import Shell.Env (Env (..), Shell (..), addBackgroundJob, addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -30,12 +30,19 @@ executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
     stdoutHandle <- liftIO $ openRedirect stdout stdoutR
     stderrHandle <- liftIO $ openRedirect stderr stderrR
-    let p = (proc cmd args){std_out = UseHandle stdoutHandle, std_err = UseHandle stderrHandle, create_group = True}
+    let p =
+            (proc cmd args)
+                { std_in = NoStream
+                , std_out = UseHandle stdoutHandle
+                , std_err = UseHandle stderrHandle
+                , create_group = True
+                }
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
         Right (_, _, _, ph) -> do
             jobNum <- nextJobNumber
+            addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
             case mPid of
                 Just pid -> liftIO $ putStrLn $ "[" ++ show jobNum ++ "] " ++ show pid
