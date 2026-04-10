@@ -14,7 +14,7 @@ import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
-import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stderr, stdout)
+import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
 import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, spawnProcess, waitForProcess)
 
@@ -29,7 +29,7 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit, create_group = True}
+    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit}
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e
@@ -39,10 +39,11 @@ executeBackground Command{body = External cmd args} = do
             jobNum <- nextJobNumber
             addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
-            case mPid of
-                Just pid -> liftIO $ putStrLn $ "[" ++ show jobNum ++ "] " ++ show pid
+            liftIO $ case mPid of
+                Just pid -> do
+                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
+                    hFlush stdout
                 Nothing -> pure ()
-            -- Keep the process handle alive by waiting in a background thread
             liftIO $ void $ forkIO $ void $ waitForProcess ph
 executeBackground cmd = execute cmd
 
