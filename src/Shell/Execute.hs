@@ -1,12 +1,13 @@
 module Shell.Execute (
     execute,
+    executeBackground,
     executePipeline,
 ) where
 
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved, saveHistory)
+import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -14,7 +15,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -24,6 +25,22 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
         `finally'` do
             liftIO $ closeRedirect stdoutR stdoutHandle
             liftIO $ closeRedirect stderrR stderrHandle
+
+executeBackground :: Command -> Shell ()
+executeBackground Command{body = External cmd args, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
+    stdoutHandle <- liftIO $ openRedirect stdout stdoutR
+    stderrHandle <- liftIO $ openRedirect stderr stderrR
+    let p = (proc cmd args){std_out = UseHandle stdoutHandle, std_err = UseHandle stderrHandle}
+    result <- liftIO $ try $ createProcess p
+    case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
+        Left e -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
+        Right (_, _, _, ph) -> do
+            jobNum <- nextJobNumber
+            mPid <- liftIO $ getPid ph
+            case mPid of
+                Just pid -> liftIO $ putStrLn $ "[" ++ show jobNum ++ "] " ++ show pid
+                Nothing -> pure ()
+executeBackground cmd = execute cmd
 
 finally' :: Shell a -> Shell b -> Shell a
 finally' action cleanup = do

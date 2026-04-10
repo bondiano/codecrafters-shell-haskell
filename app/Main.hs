@@ -27,5 +27,8 @@ repl = do
         Just input -> do
             unless (null input) $ do
                 addHistory input
-                executePipeline (parsePipeline input)
+                let (cmdStr, isBg) = splitBackground input
+                if isBg
+                    then executeBackground (parseCommand cmdStr)
+                    else executePipeline (parsePipeline input)
             repl

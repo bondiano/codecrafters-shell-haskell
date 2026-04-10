@@ -10,6 +10,7 @@ module Shell.Parser (
     parseCommand,
     parsePipeline,
     parseArgs,
+    splitBackground,
 ) where
 
 import Data.Maybe (fromMaybe, listToMaybe)
@@ -138,6 +139,13 @@ splitPipeline = go Unquoted "" []
     go InDouble cur acc ('"' : rest) = go Unquoted ('"' : cur) acc rest
     go InDouble cur acc ('\\' : c : rest) = go InDouble (c : '\\' : cur) acc rest
     go qs cur acc (c : rest) = go qs (c : cur) acc rest
+
+splitBackground :: String -> (String, Bool)
+splitBackground input =
+    let toks = parseArgs input
+     in case reverse toks of
+            ("&" : rest) -> (unwords (reverse rest), True)
+            _ -> (input, False)
 
 parseExitCode :: [String] -> Int
 parseExitCode [] = 0
