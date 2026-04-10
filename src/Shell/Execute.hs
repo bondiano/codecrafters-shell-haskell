@@ -29,7 +29,7 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit}
+    let p = (proc cmd args){std_in = CreatePipe, std_out = Inherit, std_err = Inherit}
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e
