@@ -30,7 +30,7 @@ executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
     stdoutHandle <- liftIO $ openRedirect stdout stdoutR
     stderrHandle <- liftIO $ openRedirect stderr stderrR
-    let p = (proc cmd args){std_out = UseHandle stdoutHandle, std_err = UseHandle stderrHandle}
+    let p = (proc cmd args){std_out = UseHandle stdoutHandle, std_err = UseHandle stderrHandle, create_group = True}
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
