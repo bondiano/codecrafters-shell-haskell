@@ -39,12 +39,8 @@ executeBackground Command{body = External cmd args} = do
             mPid <- liftIO $ getPid ph
             liftIO $ case mPid of
                 Just pid -> do
-                    let pidStr = show (fromIntegral pid :: Int)
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ pidStr
+                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
                     hFlush stdout
-                    -- Debug: verify process exists from OS perspective
-                    callCommand $ "kill -0 " ++ pidStr ++ " && echo 'DEBUG: kill -0 OK' >&2 || echo 'DEBUG: kill -0 FAIL' >&2"
-                    callCommand $ "ls /proc/" ++ pidStr ++ "/status >&2 2>/dev/null || echo 'DEBUG: no /proc entry' >&2"
                 Nothing -> pure ()
 executeBackground cmd = execute cmd
 
