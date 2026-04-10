@@ -4,6 +4,7 @@ module Shell.Execute (
     executePipeline,
 ) where
 
+import Control.Concurrent (forkIO)
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
@@ -28,18 +29,21 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    result <- liftIO $ try $ spawnProcess cmd args
-    case (result :: Either IOException ProcessHandle) of
+    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit, create_group = True}
+    result <- liftIO $ try $ createProcess p
+    case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e
             | isDoesNotExistError e -> liftIO $ hPutStrLn stderr $ cmd ++ ": command not found"
             | otherwise -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
-        Right ph -> do
+        Right (_, _, _, ph) -> do
             jobNum <- nextJobNumber
             addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
             case mPid of
                 Just pid -> liftIO $ putStrLn $ "[" ++ show jobNum ++ "] " ++ show pid
                 Nothing -> pure ()
+            -- Keep the process handle alive by waiting in a background thread
+            liftIO $ void $ forkIO $ void $ waitForProcess ph
 executeBackground cmd = execute cmd
 
 finally' :: Shell a -> Shell b -> Shell a
