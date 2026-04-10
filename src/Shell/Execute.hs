@@ -43,6 +43,7 @@ closeRedirect (Just _) h = hClose h
 executeBody :: Handle -> Handle -> CommandBody -> Shell ()
 executeBody _ _ Empty = return ()
 executeBody _ _ (BuiltinCmd (Type "")) = return ()
+executeBody _ _ (BuiltinCmd Jobs) = return ()
 executeBody _ _ (BuiltinCmd (Exit code)) = saveHistory >> liftIO (exitWith $ toExitCode code)
 executeBody h _ (BuiltinCmd (Echo str)) = liftIO (hPutStrLn h str)
 executeBody h _ (BuiltinCmd (Type name)) = typeOfCommand (parseCommand name) >>= liftIO . hPutStrLn h

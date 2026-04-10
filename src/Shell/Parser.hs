@@ -35,7 +35,7 @@ builtinName (History _) = "history"
 builtinName Jobs = "jobs"
 
 builtinNames :: [String]
-builtinNames = ["echo", "exit", "type", "pwd", "cd", "history"]
+builtinNames = ["echo", "exit", "type", "pwd", "cd", "history", "jobs"]
 
 data QuoteState = Unquoted | InSingle | InDouble
 
@@ -118,6 +118,7 @@ parseCommand input =
             ("history" : "-w" : path : _) -> BuiltinCmd $ History (WriteHistory path)
             ("history" : "-a" : path : _) -> BuiltinCmd $ History (AppendHistory path)
             ("history" : args) -> BuiltinCmd $ History (ShowHistory (listToMaybe args >>= readMaybe))
+            ("jobs" : _) -> BuiltinCmd Jobs
             (cmd : args) -> External cmd args
             [] -> Empty
      in Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR}
