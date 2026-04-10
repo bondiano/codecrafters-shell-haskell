@@ -15,7 +15,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, spawnProcess, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -27,20 +27,13 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
             liftIO $ closeRedirect stderrR stderrHandle
 
 executeBackground :: Command -> Shell ()
-executeBackground Command{body = External cmd args, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
-    stdoutHandle <- liftIO $ openRedirect stdout stdoutR
-    stderrHandle <- liftIO $ openRedirect stderr stderrR
-    let p =
-            (proc cmd args)
-                { std_in = NoStream
-                , std_out = UseHandle stdoutHandle
-                , std_err = UseHandle stderrHandle
-                , create_group = True
-                }
-    result <- liftIO $ try $ createProcess p
-    case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
-        Left e -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
-        Right (_, _, _, ph) -> do
+executeBackground Command{body = External cmd args} = do
+    result <- liftIO $ try $ spawnProcess cmd args
+    case (result :: Either IOException ProcessHandle) of
+        Left e
+            | isDoesNotExistError e -> liftIO $ hPutStrLn stderr $ cmd ++ ": command not found"
+            | otherwise -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
+        Right ph -> do
             jobNum <- nextJobNumber
             addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
