@@ -39,7 +39,11 @@ executeBackground Command{body = External cmd args} = do
             mPid <- liftIO $ getPid ph
             liftIO $ case mPid of
                 Just pid -> do
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
+                    let pidInt = fromIntegral pid :: Int
+                    -- Debug: check NSpid to see if PID namespace differs
+                    callCommand $ "grep NSpid /proc/" ++ show pidInt ++ "/status >&2 2>/dev/null || echo 'no NSpid' >&2"
+                    callCommand $ "grep NSpid /proc/self/status >&2 2>/dev/null || echo 'no NSpid for self' >&2"
+                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
                     hFlush stdout
                 Nothing -> pure ()
 executeBackground cmd = execute cmd
