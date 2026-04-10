@@ -15,7 +15,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), callCommand, createPipe, createProcess, getPid, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, proc, readCreateProcess, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -28,24 +28,14 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit}
-    result <- liftIO $ try $ createProcess p
-    case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
-        Left e
-            | isDoesNotExistError e -> liftIO $ hPutStrLn stderr $ cmd ++ ": command not found"
-            | otherwise -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
-        Right (_, _, _, ph) -> do
-            jobNum <- nextJobNumber
-            mPid <- liftIO $ getPid ph
-            liftIO $ case mPid of
-                Just pid -> do
-                    let pidInt = fromIntegral pid :: Int
-                    -- Debug: check NSpid to see if PID namespace differs
-                    callCommand $ "grep NSpid /proc/" ++ show pidInt ++ "/status >&2 2>/dev/null || echo 'no NSpid' >&2"
-                    callCommand $ "grep NSpid /proc/self/status >&2 2>/dev/null || echo 'no NSpid for self' >&2"
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
-                    hFlush stdout
-                Nothing -> pure ()
+    jobNum <- nextJobNumber
+    let cmdLine = unwords (cmd : args)
+    -- Use sh's native & to background the process, capture PID via $!
+    pidStr <- liftIO $ readCreateProcess (proc "/bin/sh" ["-c", cmdLine ++ " & echo $!"]){std_err = Inherit} ""
+    let pidLine = filter (/= '\n') pidStr
+    liftIO $ do
+        putStrLn $ "[" ++ show jobNum ++ "] " ++ pidLine
+        hFlush stdout
 executeBackground cmd = execute cmd
 
 finally' :: Shell a -> Shell b -> Shell a
