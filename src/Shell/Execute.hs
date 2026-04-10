@@ -15,7 +15,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), callCommand, createPipe, createProcess, getPid, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -39,8 +39,11 @@ executeBackground Command{body = External cmd args} = do
             mPid <- liftIO $ getPid ph
             liftIO $ case mPid of
                 Just pid -> do
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
+                    let pidInt = fromIntegral pid :: Int
+                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
                     hFlush stdout
+                    -- Debug: show all processes
+                    callCommand "ps -ef >&2 || ps aux >&2 || echo 'ps failed' >&2"
                 Nothing -> pure ()
 executeBackground cmd = execute cmd
 
