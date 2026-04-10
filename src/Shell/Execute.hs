@@ -39,15 +39,11 @@ executeBackground Command{body = External cmd args} = do
             jobNum <- nextJobNumber
             addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
-            -- Debug: check if process is already dead
-            exitCode <- liftIO $ getProcessExitCode ph
-            liftIO $ hPutStrLn stderr $ "DEBUG: pid=" ++ show mPid ++ " exitCode=" ++ show exitCode
             liftIO $ case mPid of
                 Just pid -> do
                     putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
                     hFlush stdout
                 Nothing -> pure ()
-            liftIO $ void $ forkIO $ void $ waitForProcess ph
 executeBackground cmd = execute cmd
 
 escapeShellArg :: String -> String
