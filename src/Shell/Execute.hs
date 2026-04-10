@@ -40,10 +40,14 @@ executeBackground Command{body = External cmd args} = do
             liftIO $ case mPid of
                 Just pid -> do
                     let pidInt = fromIntegral pid :: Int
+                    -- Debug: check /proc/<pid> before and after printing
+                    let procPath = "/proc/" ++ show pidInt ++ "/stat"
+                    stat1 <- try (readFile procPath) :: IO (Either IOException String)
+                    hPutStrLn stderr $ "DEBUG_BEFORE: " ++ show stat1
                     putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
                     hFlush stdout
-                    -- Debug: show all processes
-                    callCommand "ps -ef >&2 || ps aux >&2 || echo 'ps failed' >&2"
+                    stat2 <- try (readFile procPath) :: IO (Either IOException String)
+                    hPutStrLn stderr $ "DEBUG_AFTER: " ++ show stat2
                 Nothing -> pure ()
 executeBackground cmd = execute cmd
 
