@@ -17,7 +17,7 @@ import Text.Read (readMaybe)
 
 data HistoryAction = ShowHistory (Maybe Int) | ReadHistory FilePath | WriteHistory FilePath | AppendHistory FilePath
 
-data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath) | History HistoryAction
+data Builtin = Exit Int | Echo String | Type String | PWD | CD (Maybe FilePath) | History HistoryAction | Jobs
 
 data RedirectMode = Overwrite | Append deriving (Eq, Show)
 data Redirect = Redirect {target :: FilePath, mode :: RedirectMode} deriving (Eq, Show)
@@ -32,6 +32,7 @@ builtinName (Type _) = "type"
 builtinName PWD = "pwd"
 builtinName (CD _) = "cd"
 builtinName (History _) = "history"
+builtinName Jobs = "jobs"
 
 builtinNames :: [String]
 builtinNames = ["echo", "exit", "type", "pwd", "cd", "history"]
@@ -72,14 +73,14 @@ parseArgs = finalize . go ParseState{quoteState = Unquoted, currentToken = Nothi
     go st@ParseState{quoteState = InDouble} ('\\' : next : rest)
         | next `elem` ['\\', '"'] = go (appendChar next st) rest
         | otherwise = go (appendChar next $ appendChar '\\' st) rest
-    -- Space outside quotes — flush token
+    -- Space outside quotes -- flush token
     go st@ParseState{quoteState = Unquoted} (' ' : rest) = case currentToken st of
         Just t -> go st{currentToken = Nothing, tokens = reverse t : tokens st} rest
         Nothing -> go st rest
-    -- Backslash outside quotes — escape next char
+    -- Backslash outside quotes -- escape next char
     go st@ParseState{quoteState = Unquoted} ('\\' : next : rest) =
         go (appendChar next st) rest
-    -- Any char inside quotes or outside — append
+    -- Any char inside quotes or outside -- append
     go st (c : rest) =
         go (appendChar c st) rest
 
