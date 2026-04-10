@@ -16,7 +16,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, shell, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, getProcessExitCode, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -29,8 +29,7 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let cmdLine = unwords (cmd : map escapeShellArg args)
-        p = (shell cmdLine){std_in = Inherit, std_out = Inherit, std_err = Inherit}
+    let p = (proc cmd args){std_in = Inherit, std_out = Inherit, std_err = Inherit}
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e
@@ -40,6 +39,9 @@ executeBackground Command{body = External cmd args} = do
             jobNum <- nextJobNumber
             addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
+            -- Debug: check if process is already dead
+            exitCode <- liftIO $ getProcessExitCode ph
+            liftIO $ hPutStrLn stderr $ "DEBUG: pid=" ++ show mPid ++ " exitCode=" ++ show exitCode
             liftIO $ case mPid of
                 Just pid -> do
                     putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
