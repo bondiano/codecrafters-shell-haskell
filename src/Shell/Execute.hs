@@ -1,14 +1,19 @@
+{-# LANGUAGE ForeignFunctionInterface #-}
+
 module Shell.Execute (
     execute,
     executeBackground,
     executePipeline,
 ) where
 
-import Control.Concurrent (forkIO)
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), addBackgroundJob, addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
+import Foreign.C.String (CString, newCString)
+import Foreign.C.Types (CInt (..))
+import Foreign.Marshal.Array (withArray0)
+import Foreign.Ptr (Ptr, nullPtr)
+import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -16,7 +21,11 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, getProcessExitCode, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, proc, waitForProcess)
+
+foreign import ccall "fork" c_fork :: IO CInt
+foreign import ccall "execvp" c_execvp :: CString -> Ptr CString -> IO CInt
+foreign import ccall "_exit" c_exit :: CInt -> IO ()
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -29,30 +38,29 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let p = (proc cmd args){std_in = CreatePipe, std_out = Inherit, std_err = Inherit}
-    result <- liftIO $ try $ createProcess p
-    case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
-        Left e
-            | isDoesNotExistError e -> liftIO $ hPutStrLn stderr $ cmd ++ ": command not found"
-            | otherwise -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
-        Right (_, _, _, ph) -> do
-            jobNum <- nextJobNumber
-            addBackgroundJob jobNum ph
-            mPid <- liftIO $ getPid ph
-            liftIO $ case mPid of
-                Just pid -> do
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
-                    hFlush stdout
-                Nothing -> pure ()
+    jobNum <- nextJobNumber
+    pid <- liftIO $ spawnBackground cmd args
+    liftIO $ case pid of
+        (-1) -> hPutStrLn stderr $ cmd ++ ": fork failed"
+        _ -> do
+            putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
+            hFlush stdout
 executeBackground cmd = execute cmd
 
-escapeShellArg :: String -> String
-escapeShellArg s
-    | any (`elem` s) (" \t\n\\\"'$`!#&|;(){}[]<>?*~" :: String) = "'" ++ concatMap esc s ++ "'"
-    | otherwise = s
-  where
-    esc '\'' = "'\\''"
-    esc c = [c]
+spawnBackground :: String -> [String] -> IO CInt
+spawnBackground cmd args = do
+    cCmd <- newCString cmd
+    cArgs <- mapM newCString (cmd : args)
+    withArray0 nullPtr cArgs $ \argsPtr -> do
+        pid <- c_fork
+        case pid of
+            0 -> do
+                -- Child process: exec immediately
+                _ <- c_execvp cCmd argsPtr
+                -- If exec fails, exit child
+                c_exit 127
+                return 0
+            _ -> return pid
 
 finally' :: Shell a -> Shell b -> Shell a
 finally' action cleanup = do
