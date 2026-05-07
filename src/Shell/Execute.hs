@@ -42,14 +42,17 @@ executeBackground Command{body = External cmd args} = do
                 Just pid -> do
                     let pidInt = fromIntegral pid :: Int
                     let safeRead f = readFile f `catch` (\e -> pure $ "ERR: " ++ show (e :: IOException))
-                    childStat <- safeRead ("/proc/" ++ show pidInt ++ "/stat")
-                    -- Extract PPID (4th field after "(comm) ")
-                    let ppidField = case break (== ')') childStat of
-                            (_, ')' : rest) -> case words (drop 1 rest) of
-                                (_ : ppid : _) -> ppid
+                    let extractField n raw = case break (== ')') raw of
+                            (_, ')' : rest) -> case drop n (words (drop 1 rest)) of
+                                (v : _) -> v
                                 _ -> "?"
                             _ -> "?"
-                    hPutStrLn stderr $ "DBG ppid=" ++ ppidField
+                    selfStat <- safeRead "/proc/self/stat"
+                    childStat <- safeRead ("/proc/" ++ show pidInt ++ "/stat")
+                    let ourPid = takeWhile (/= ' ') selfStat
+                        ourPpid = extractField 1 selfStat
+                        childPpid = extractField 1 childStat
+                    hPutStrLn stderr $ "DBG ourPid=" ++ ourPid ++ " ourPpid=" ++ ourPpid ++ " childPid=" ++ show pidInt ++ " childPpid=" ++ childPpid
                     putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
                     hFlush stdout
                 Nothing -> pure ()
