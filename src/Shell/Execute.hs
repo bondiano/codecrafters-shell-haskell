@@ -15,7 +15,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.FilePath ((</>))
 import System.IO (Handle, IOMode (..), hClose, hFlush, hPutStrLn, openFile, stderr, stdout)
 import System.IO.Error (isDoesNotExistError, isPermissionError)
-import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), callCommand, createPipe, createProcess, getPid, proc, waitForProcess)
+import System.Process (CreateProcess (..), ProcessHandle, StdStream (..), createPipe, createProcess, getPid, proc, waitForProcess)
 
 execute :: Command -> Shell ()
 execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stderrR} = do
@@ -39,15 +39,8 @@ executeBackground Command{body = External cmd args} = do
             mPid <- liftIO $ getPid ph
             liftIO $ case mPid of
                 Just pid -> do
-                    let pidInt = fromIntegral pid :: Int
-                    -- Debug: check /proc/<pid> before and after printing
-                    let procPath = "/proc/" ++ show pidInt ++ "/stat"
-                    stat1 <- try (readFile procPath) :: IO (Either IOException String)
-                    hPutStrLn stderr $ "DEBUG_BEFORE: " ++ show stat1
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
+                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
                     hFlush stdout
-                    stat2 <- try (readFile procPath) :: IO (Either IOException String)
-                    hPutStrLn stderr $ "DEBUG_AFTER: " ++ show stat2
                 Nothing -> pure ()
 executeBackground cmd = execute cmd
 

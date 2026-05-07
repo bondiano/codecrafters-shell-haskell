@@ -9,4 +9,4 @@
 set -e # Exit on failure
 
 stackInstallRoot=$(cd $(dirname "$0") && stack path --local-install-root) # Fetch the path from within the project directory
-exec "$stackInstallRoot/bin/codecrafters-shell-exe" +RTS -N1 -RTS "$@"
+exec "$stackInstallRoot/bin/codecrafters-shell-exe" "$@"
