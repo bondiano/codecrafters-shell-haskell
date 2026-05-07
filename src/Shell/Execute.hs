@@ -7,7 +7,7 @@ module Shell.Execute (
 import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
-import Shell.Env (Env (..), Shell (..), addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
+import Shell.Env (Env (..), Shell (..), addBackgroundJob, addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
 import Shell.Parser (Builtin (..), Command (..), CommandBody (..), HistoryAction (..), Redirect (..), RedirectMode (..), builtinName, parseCommand)
 import Shell.Path (getExecutablePathFromPaths)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, setCurrentDirectory)
@@ -28,7 +28,7 @@ execute Command{body = cmdBody, stdoutRedirect = stdoutR, stderrRedirect = stder
 
 executeBackground :: Command -> Shell ()
 executeBackground Command{body = External cmd args} = do
-    let p = (proc cmd args){new_session = True}
+    let p = (proc cmd args){std_in = NoStream}
     result <- liftIO $ try $ createProcess p
     case (result :: Either IOException (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)) of
         Left e
@@ -36,6 +36,7 @@ executeBackground Command{body = External cmd args} = do
             | otherwise -> liftIO $ hPutStrLn stderr $ cmd ++ ": " ++ show e
         Right (_, _, _, ph) -> do
             jobNum <- nextJobNumber
+            addBackgroundJob jobNum ph
             mPid <- liftIO $ getPid ph
             liftIO $ case mPid of
                 Just pid -> do
