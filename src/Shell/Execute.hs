@@ -4,7 +4,7 @@ module Shell.Execute (
     executePipeline,
 ) where
 
-import Control.Exception (IOException, catch, try)
+import Control.Exception (IOException, try)
 import Control.Monad (void)
 import Control.Monad.Reader (ask, asks, liftIO, runReaderT)
 import Shell.Env (Env (..), Shell (..), addBackgroundJob, addHistory, getHistory, getUnsavedHistory, markHistorySaved, nextJobNumber, saveHistory)
@@ -40,15 +40,7 @@ executeBackground Command{body = External cmd args} = do
             mPid <- liftIO $ getPid ph
             liftIO $ case mPid of
                 Just pid -> do
-                    let pidInt = fromIntegral pid :: Int
-                    let safeRead f = readFile f `catch` (\e -> pure $ "ERR: " ++ show (e :: IOException))
-                    ownStat <- safeRead "/proc/self/stat"
-                    childStat <- safeRead ("/proc/" ++ show pidInt ++ "/stat")
-                    childStatus <- safeRead ("/proc/" ++ show pidInt ++ "/status")
-                    hPutStrLn stderr $ "DBG self/stat: " ++ take 200 ownStat
-                    hPutStrLn stderr $ "DBG child/stat: " ++ take 200 childStat
-                    hPutStrLn stderr $ "DBG child/status:\n" ++ take 800 childStatus
-                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show pidInt
+                    putStrLn $ "[" ++ show jobNum ++ "] " ++ show (fromIntegral pid :: Int)
                     hFlush stdout
                 Nothing -> pure ()
 executeBackground cmd = execute cmd
